@@ -1,4 +1,10 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "./hooks/useAuth";
+import { useWords } from "./hooks/useWords";
+import { signIn, signUp, signOut } from "./lib/services/auth";
+import { useRef } from "react"
+import { toBase64, recognizeWords, batchLookup } from "./lib/services/camera"
+import { batchAddWords } from "./lib/services/words"
 
 // ============ CUTE MASCOT SVG COMPONENTS ============
 const OwlMascot = ({ size = 80, mood = "happy", className = "" }) => {
@@ -141,6 +147,65 @@ const TrophyIcon = ({ size = 18 }) => (
     <path d="M6 9H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3M18 9h3a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3M6 4h12v7a6 6 0 0 1-12 0V4zM9 21h6M12 17v4"/>
   </svg>
 );
+
+// ============ LOGIN PAGE ============
+const LoginPage = ({ onLogin }) => {
+  const [isRegister, setIsRegister] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      if (isRegister) {
+        await signUp(email, password);
+        setError("注册成功！请查收验证邮件后登录 📧");
+      } else {
+        await signIn(email, password);
+        onLogin();
+      }
+    } catch (err) {
+      setError(err.message || "操作失败，请重试");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "var(--bg-main)" }}>
+      <OwlMascot size={100} mood="happy" className="float-anim" />
+      <h1 style={{ fontSize: 28, fontWeight: 900, color: "var(--warm-700)", marginTop: 16 }}>WordWise 🦉</h1>
+      <p style={{ color: "var(--text-secondary)", marginBottom: 32, fontWeight: 600 }}>智能单词学习助手</p>
+
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <input
+          type="email"
+          placeholder="邮箱地址"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: "2px solid var(--warm-200)", fontSize: 15, fontFamily: "inherit", marginBottom: 12, outline: "none" }}
+        />
+        <input
+          type="password"
+          placeholder="密码（至少6位）"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: "2px solid var(--warm-200)", fontSize: 15, fontFamily: "inherit", marginBottom: 16, outline: "none" }}
+        />
+        {error && <p style={{ color: error.includes("成功") ? "var(--green-500)" : "var(--coral-500)", fontSize: 13, fontWeight: 600, marginBottom: 12, textAlign: "center" }}>{error}</p>}
+        <button className="btn-primary" onClick={handleSubmit} disabled={loading}>
+          {loading ? "处理中..." : isRegister ? "注册账号 🎉" : "登录 →"}
+        </button>
+        <button className="btn-outline" style={{ marginTop: 10 }} onClick={() => setIsRegister(!isRegister)}>
+          {isRegister ? "已有账号？去登录" : "没有账号？免费注册"}
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // ============ SAMPLE DATA ============
 const sampleWords = [
@@ -846,95 +911,155 @@ const HomePage = () => {
 };
 
 // PAGE 2: CAMERA / OCR
-const CameraPage = ({ onScanComplete }) => {
-  const [scanning, setScanning] = useState(false);
-  const [scanned, setScanned] = useState(false);
-  const [selectedWords, setSelectedWords] = useState(new Set(["determine", "accomplish", "enthusiasm", "brilliant", "consequence"]));
-  
-  const ocrResults = ["determine", "accomplish", "The", "student", "enthusiasm", "was", "brilliant", "consequence", "in", "and", "to", "persuade", "reluctant"];
-  const englishWords = ocrResults.filter(w => w.length > 3 && w[0] === w[0].toLowerCase() === false || ["determine","accomplish","enthusiasm","brilliant","consequence","persuade","reluctant"].includes(w));
+const CameraPage = () => {
+  const { user } = useAuth()
+  const [preview, setPreview] = useState(null)
+  const [words, setWords] = useState([])
+  const [selected, setSelected] = useState(new Set())
+  const [status, setStatus] = useState("idle")
+  const [error, setError] = useState("")
+  const [savedCount, setSavedCount] = useState(0)
+  const fileRef = useRef(null)
 
-  const handleShutter = () => {
-    setScanning(true);
-    setTimeout(() => {
-      setScanning(false);
-      setScanned(true);
-    }, 2000);
-  };
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPreview(URL.createObjectURL(file))
+    setStatus("scanning")
+    setError("")
+    try {
+      const base64 = await toBase64(file)
+      const mediaType = file.type || "image/jpeg"
+      const found = await recognizeWords(base64, mediaType)
+      setWords(found)
+      setSelected(new Set(found))
+      setStatus("confirming")
+    } catch (err) {
+      setError("识别失败，请重试")
+      setStatus("idle")
+    }
+  }
 
-  const toggleWord = (w) => {
-    setSelectedWords(prev => {
-      const next = new Set(prev);
-      next.has(w) ? next.delete(w) : next.add(w);
-      return next;
-    });
-  };
+  const toggle = (w) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(w) ? next.delete(w) : next.add(w)
+    return next
+  })
+
+const handleSave = async () => {
+    if (!selected.size || !user) return
+    setStatus("saving")
+    setError("")
+    try {
+      const wordList = [...selected]
+      let wordsToAdd
+      try {
+        const results = await batchLookup(wordList)
+        wordsToAdd = results.map(item => ({
+          word: item.word,
+          meaning: item.definition || '',
+          phonetic: item.phonetic || '',
+        }))
+      } catch {
+        wordsToAdd = wordList.map(w => ({ word: w, meaning: '', phonetic: '' }))
+      }
+      const saved = await batchAddWords(wordsToAdd)
+      setSavedCount(saved.length)
+      setStatus("done")
+      setTimeout(() => {
+        setPreview(null); setWords([]); setSelected(new Set()); setStatus("idle")
+      }, 2000)
+    } catch (err) {
+      setError("保存失败，请重试")
+      setStatus("idle")
+    }
+  }
 
   return (
     <div className="page-content" style={{ paddingTop: 8 }}>
       <div className="page-label">拍照识别</div>
       <div className="page-heading">拍一拍，记单词 📸</div>
 
-      {!scanned ? (
+      <input ref={fileRef} type="file" accept="image/*" capture="environment"
+        onChange={handleFile} style={{ display: "none" }} />
+
+      {status === "idle" && (
         <>
-          <div className="camera-viewfinder">
+          <div className="camera-viewfinder" onClick={() => fileRef.current?.click()} style={{ cursor: "pointer" }}>
             <div className="camera-frame">
               <CameraIcon size={36} />
-              <div className="camera-frame-text">
-                {scanning ? "正在识别中..." : "将试卷或课本放入框内"}
-              </div>
-            </div>
-            {scanning && <div className="scan-line" />}
-            {/* Fake text overlay to simulate paper */}
-            <div style={{ position: "absolute", top: 20, left: 20, right: 20, opacity: 0.08, fontSize: 11, color: "white", lineHeight: 2, pointerEvents: "none" }}>
-              The student showed great enthusiasm for learning. The brilliant consequence of hard work is the ability to accomplish anything. One must determine their goals and persuade others with reluctant effort...
+              <div className="camera-frame-text">点击拍照或选择图片</div>
             </div>
           </div>
-          <button className="shutter-btn" onClick={handleShutter}>
+          <button className="shutter-btn" onClick={() => fileRef.current?.click()}>
             <div className="shutter-inner" />
           </button>
           <div style={{ textAlign: "center", fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
-            {scanning ? "AI 正在识别英文单词..." : "点击拍照按钮开始识别"}
+            支持拍照或从相册选取，圈划的单词将被自动识别
           </div>
+          {error && <div style={{ textAlign: "center", color: "var(--coral-500)", marginTop: 12, fontWeight: 700 }}>{error}</div>}
         </>
-      ) : (
+      )}
+
+      {status === "scanning" && (
+        <div className="card" style={{ textAlign: "center", padding: 40 }}>
+          {preview && <img src={preview} alt="预览" style={{ width: "100%", borderRadius: 12, marginBottom: 16, maxHeight: 200, objectFit: "cover" }} />}
+          <div className="scan-line" style={{ position: "relative", margin: "0 auto 16px", width: "80%", height: 2, background: "var(--warm-400)", animation: "shimmer 1.5s linear infinite" }} />
+          <div style={{ fontWeight: 700, color: "var(--warm-600)" }}>AI 正在识别单词...</div>
+        </div>
+      )}
+
+      {status === "confirming" && (
         <div style={{ animation: "fadeUp 0.4s ease-out" }}>
+          {preview && <img src={preview} alt="预览" style={{ width: "100%", borderRadius: 16, marginBottom: 12, maxHeight: 180, objectFit: "cover" }} />}
           <div className="card" style={{ background: "linear-gradient(135deg, #FEF3C7, #FFEDD5)", marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <CheckCircle size={22} />
               <span style={{ fontWeight: 800, fontSize: 16, color: "var(--warm-700)" }}>识别完成！</span>
-              <span className="badge badge-warm" style={{ marginLeft: "auto" }}>发现 7 个单词</span>
+              <span className="badge badge-warm" style={{ marginLeft: "auto" }}>发现 {words.length} 个单词</span>
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
-              点击选择你需要记忆的单词：
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, marginTop: 8 }}>
+              点击选择要收录的单词：
             </div>
           </div>
-
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-              {englishWords.map(w => (
-                <div
-                  key={w}
-                  className={`word-chip ${selectedWords.has(w) ? "selected" : "unselected"}`}
-                  onClick={() => toggleWord(w)}
-                >
-                  {selectedWords.has(w) ? "✓" : "+"} {w}
+            {words.length === 0
+              ? <div style={{ textAlign: "center", color: "var(--text-secondary)", padding: 20 }}>未识别到单词，请重试</div>
+              : <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                  {words.map(w => (
+                    <div key={w} className={`word-chip ${selected.has(w) ? "selected" : "unselected"}`} onClick={() => toggle(w)}>
+                      {selected.has(w) ? "✓" : "+"} {w}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+            }
           </div>
-
-          <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
-            <button className="btn-outline" style={{ flex: 1 }} onClick={() => setScanned(false)}>重新拍照</button>
-            <button className="btn-primary" style={{ flex: 2 }}>
-              收录 {selectedWords.size} 个单词
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button className="btn-outline" style={{ flex: 1 }} onClick={() => { setStatus("idle"); setPreview(null) }}>重拍</button>
+            <button className="btn-primary" style={{ flex: 2 }} onClick={handleSave} disabled={!selected.size}>
+              收录 {selected.size} 个单词 →
             </button>
           </div>
         </div>
       )}
+
+      {status === "saving" && (
+        <div className="card" style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ fontWeight: 700, color: "var(--warm-600)" }}>正在查询释义并保存...</div>
+        </div>
+      )}
+
+      {status === "done" && (
+        <div className="card" style={{ textAlign: "center", padding: 40, animation: "bounceIn 0.5s ease-out" }}>
+          <OwlMascot size={80} mood="celebrate" />
+          <div style={{ fontWeight: 800, fontSize: 18, color: "var(--warm-700)", marginTop: 12 }}>
+            成功收录 {savedCount} 个单词！🎉
+          </div>
+        </div>
+      )}
     </div>
-  );
-};
+  )
+}
 
 // PAGE 3: WORD BOOK
 const WordBookPage = ({ onSelectWord }) => {
@@ -1321,12 +1446,33 @@ const QuizPage = () => {
 // ============ MAIN APP ============
 export default function WordWiseApp() {
   const [activePage, setActivePage] = useState("home");
+  const { user, loading } = useAuth();
+  const { words, addWords, deleteWord } = useWords();
+
+  // 加载中
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-main)" }}>
+        <OwlMascot size={80} mood="thinking" className="float-anim" />
+      </div>
+    );
+  }
+
+  // 未登录，显示登录页
+  if (!user) {
+    return (
+      <>
+        <style>{styles}</style>
+        <LoginPage onLogin={() => {}} />
+      </>
+    );
+  }
 
   const pages = {
-    home: <HomePage />,
+    home: <HomePage words={words} />,
     camera: <CameraPage />,
-    wordbook: <WordBookPage />,
-    flashcard: <FlashcardPage />,
+    wordbook: <WordBookPage words={words} onDeleteWord={deleteWord} />,
+    flashcard: <FlashcardPage words={words} />,
     quiz: <QuizPage />,
   };
 
@@ -1339,7 +1485,12 @@ export default function WordWiseApp() {
         {/* Header */}
         <div className="header" style={{ position: "relative", zIndex: 10 }}>
           <div className="header-title">WordWise 🦉</div>
-          <div className="header-avatar">明</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={() => signOut()} style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", background: "none", border: "none", cursor: "pointer" }}>
+              退出
+            </button>
+            <div className="header-avatar">{user.email?.[0].toUpperCase()}</div>
+          </div>
         </div>
 
         {/* Page Content */}
@@ -1350,23 +1501,19 @@ export default function WordWiseApp() {
         {/* Tab Bar */}
         <div className="tab-bar">
           <button className={`tab-item ${activePage === "home" ? "active" : ""}`} onClick={() => setActivePage("home")}>
-            <HomeIcon size={22} />
-            <span>首页</span>
+            <HomeIcon size={22} /><span>首页</span>
           </button>
           <button className={`tab-item ${activePage === "wordbook" ? "active" : ""}`} onClick={() => setActivePage("wordbook")}>
-            <BookIcon size={22} />
-            <span>词库</span>
+            <BookIcon size={22} /><span>词库</span>
           </button>
           <button className="tab-item camera-tab" onClick={() => setActivePage("camera")}>
             <CameraIcon size={26} />
           </button>
           <button className={`tab-item ${activePage === "flashcard" ? "active" : ""}`} onClick={() => setActivePage("flashcard")}>
-            <FlashcardIcon size={22} />
-            <span>学习</span>
+            <FlashcardIcon size={22} /><span>学习</span>
           </button>
           <button className={`tab-item ${activePage === "quiz" ? "active" : ""}`} onClick={() => setActivePage("quiz")}>
-            <QuizIcon size={22} />
-            <span>测验</span>
+            <QuizIcon size={22} /><span>测验</span>
           </button>
         </div>
       </div>
