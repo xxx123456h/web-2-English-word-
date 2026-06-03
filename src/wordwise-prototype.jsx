@@ -1,4 +1,19 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "./hooks/useAuth";
+import { useWords } from "./hooks/useWords";
+import { signIn, signUp, signOut } from "./lib/services/auth";
+import { useRef } from "react"
+import { toBase64, recognizeWords, batchLookup } from "./lib/services/camera"
+import { calcNextReview } from "./lib/utils/ebbinghaus"
+import { PronounceButton } from './components/PronounceButton';
+import { WordAiImage } from './components/WordAiImage';
+import { DailyWordsCard } from './components/DailyWordsCard';
+import { VocabBookSelector } from './components/VocabBookSelector';
+import { WordDetailModal } from './components/WordDetailModal';
+import { useVocabLearn } from "./hooks/useVocabLearn"
+import { useReviewWords } from "./hooks/useReviewWords"
+import VocabLearnPage from "./pages/VocabLearnPage"
+import { speak } from './lib/services/pronunciation';
 
 // ============ CUTE MASCOT SVG COMPONENTS ============
 const OwlMascot = ({ size = 80, mood = "happy", className = "" }) => {
@@ -142,44 +157,65 @@ const TrophyIcon = ({ size = 18 }) => (
   </svg>
 );
 
-// ============ SAMPLE DATA ============
-const sampleWords = [
-  { id: 1, word: "accomplish", phonetic: "/əˈkɑːm.plɪʃ/", meaning: "完成，达到", stage: 5, nextReview: "今天", correct: 8, total: 10, date: "2026-04-25" },
-  { id: 2, word: "brilliant", phonetic: "/ˈbrɪl.jənt/", meaning: "杰出的，明亮的", stage: 3, nextReview: "今天", correct: 5, total: 8, date: "2026-04-26" },
-  { id: 3, word: "consequence", phonetic: "/ˈkɑːn.sə.kwens/", meaning: "结果，后果", stage: 2, nextReview: "今天", correct: 3, total: 6, date: "2026-04-27" },
-  { id: 4, word: "determine", phonetic: "/dɪˈtɜːr.mɪn/", meaning: "决定，确定", stage: 4, nextReview: "明天", correct: 7, total: 9, date: "2026-04-27" },
-  { id: 5, word: "enthusiasm", phonetic: "/ɪnˈθuː.zi.æz.əm/", meaning: "热情，热忱", stage: 1, nextReview: "今天", correct: 1, total: 3, date: "2026-04-28" },
-  { id: 6, word: "magnificent", phonetic: "/mæɡˈnɪf.ɪ.sənt/", meaning: "壮丽的，极好的", stage: 6, nextReview: "04-30", correct: 12, total: 13, date: "2026-04-22" },
-  { id: 7, word: "persuade", phonetic: "/pɚˈsweɪd/", meaning: "说服，劝服", stage: 2, nextReview: "今天", correct: 2, total: 5, date: "2026-04-29" },
-  { id: 8, word: "reluctant", phonetic: "/rɪˈlʌk.tənt/", meaning: "不情愿的", stage: 3, nextReview: "明天", correct: 4, total: 6, date: "2026-04-29" },
-];
+// ============ LOGIN PAGE ============
+const LoginPage = ({ onLogin }) => {
+  const [isRegister, setIsRegister] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-const quizQuestions = [
-  {
-    word: "accomplish",
-    correct: "完成，达到",
-    options: ["完成，达到", "陪伴，伴随", "积累，累积", "承认，认可"],
-    type: "meaning",
-  },
-  {
-    word: "brilliant",
-    correct: "杰出的，明亮的",
-    options: ["短暂的，简短的", "杰出的，明亮的", "残忍的，野蛮的", "脆弱的，易碎的"],
-    type: "similar",
-  },
-  {
-    word: "consequence",
-    correct: "结果，后果",
-    options: ["意识，知觉", "保守的", "结果，后果", "连续的"],
-    type: "similar",
-  },
-  {
-    word: "enthusiasm",
-    correct: "热情，热忱",
-    options: ["环境", "热情，热忱", "入口", "同等的"],
-    type: "meaning",
-  },
-];
+  const handleSubmit = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      if (isRegister) {
+        await signUp(email, password);
+        setError("注册成功！请查收验证邮件后登录 📧");
+      } else {
+        await signIn(email, password);
+        onLogin();
+      }
+    } catch (err) {
+      setError(err.message || "操作失败，请重试");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "var(--bg-main)" }}>
+      <OwlMascot size={100} mood="happy" className="float-anim" />
+      <h1 style={{ fontSize: 28, fontWeight: 900, color: "var(--warm-700)", marginTop: 16 }}>WordWise 🦉</h1>
+      <p style={{ color: "var(--text-secondary)", marginBottom: 32, fontWeight: 600 }}>智能单词学习助手</p>
+
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <input
+          type="email"
+          placeholder="邮箱地址"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: "2px solid var(--warm-200)", fontSize: 15, fontFamily: "inherit", marginBottom: 12, outline: "none" }}
+        />
+        <input
+          type="password"
+          placeholder="密码（至少6位）"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: "2px solid var(--warm-200)", fontSize: 15, fontFamily: "inherit", marginBottom: 16, outline: "none" }}
+        />
+        {error && <p style={{ color: error.includes("成功") ? "var(--green-500)" : "var(--coral-500)", fontSize: 13, fontWeight: 600, marginBottom: 12, textAlign: "center" }}>{error}</p>}
+        <button className="btn-primary" onClick={handleSubmit} disabled={loading}>
+          {loading ? "处理中..." : isRegister ? "注册账号 🎉" : "登录 →"}
+        </button>
+        <button className="btn-outline" style={{ marginTop: 10 }} onClick={() => setIsRegister(!isRegister)}>
+          {isRegister ? "已有账号？去登录" : "没有账号？免费注册"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 
 const stageLabels = ["新词", "初识", "熟悉", "巩固", "掌握", "精通", "夯实"];
 const stageColors = ["#EF4444", "#F97316", "#FBBF24", "#84CC16", "#22C55E", "#14B8A6", "#6366F1"];
@@ -744,28 +780,122 @@ const styles = `
     line-height: 1.2;
     margin-bottom: 20px;
   }
+
+  /* ---- Vocab Book Selector ---- */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    animation: fadeUp 0.25s ease-out;
+  }
+  .book-item {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 16px; border-radius: var(--radius-md);
+    border: 2px solid var(--warm-100);
+    margin-bottom: 10px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .book-item:hover { border-color: var(--warm-300); background: var(--warm-50); }
+  .book-item.active {
+    border-color: var(--warm-400);
+    background: linear-gradient(135deg, var(--warm-50), var(--orange-50));
+    box-shadow: 0 2px 12px rgba(249,115,22,0.15);
+  }
+  .book-emoji { font-size: 32px; }
+  .book-name { font-size: 15px; font-weight: 800; color: var(--text-primary); }
+  .book-desc { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .book-count {
+    font-size: 13px; font-weight: 800; color: var(--warm-600);
+    margin-left: auto; white-space: nowrap;
+  }
+
+  /* ---- Word Detail Modal ---- */
+  .word-modal {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(10px);
+    display: flex; align-items: flex-end; justify-content: center;
+    animation: fadeUp 0.3s ease-out;
+  }
+  .word-modal-content {
+    background: var(--bg-card);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding: 28px 24px 40px;
+    width: 100%; max-width: 420px;
+    max-height: 85vh; overflow-y: auto;
+    animation: slideUp 0.35s ease-out;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  @keyframes slideOutRight {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(120%); opacity: 0; }
+  }
+  @keyframes slideOutLeft {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(-120%); opacity: 0; }
+  }
+
+  /* ---- Mini Word Card (横向滚动) ---- */
+  .mini-word-card {
+    flex-shrink: 0;
+    width: 100px; padding: 12px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(145deg, var(--warm-50), var(--orange-50));
+    border: 1.5px solid var(--warm-200);
+    text-align: center; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .mini-word-card:hover {
+    border-color: var(--warm-400);
+    box-shadow: 0 2px 8px rgba(249,115,22,0.15);
+  }
+
+  /* ---- Memory Tip ---- */
+  .memory-section {
+    padding: 14px; margin: 10px 0;
+    border-radius: var(--radius-md);
+    border-left: 4px solid var(--warm-400);
+  }
+  .root-affix {
+    background: var(--blue-50);
+    border-left-color: var(--blue-400);
+  }
+  .memory-tip {
+    background: var(--green-50);
+    border-left-color: var(--green-400);
+  }
 `;
 
 // ============ PAGE COMPONENTS ============
 
 // PAGE 1: HOME / DASHBOARD
-const HomePage = () => {
-  const todayWords = sampleWords.filter(w => w.nextReview === "今天");
+const HomePage = ({ words = [], dailyWords, currentBook, onStartLearn, onChangeBook, onWordClick, setActivePage }) => {
+  const todayWords = words.filter(w => new Date(w.next_review_at) <= new Date());
+  const masteredWords = words.filter(w => w.ebbinghaus_stage >= 5);
+  const correctRate = words.length > 0 ? Math.round((masteredWords.length / words.length) * 100) : 0;
+  const reviewProgress = words.length > 0 ? Math.round(((words.length - todayWords.length) / words.length) * 100) : 0;
+
   const streakDays = [21,22,23,24,25,26,27,28,29,30];
   const doneUntil = 29;
-  
+
   return (
     <div className="page-content" style={{ paddingTop: 8 }}>
       <div className="blob-1" />
-      
+
       {/* Welcome Card */}
       <div className="card card-warm" style={{ display: "flex", alignItems: "center", gap: 16, position: "relative", overflow: "hidden" }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "var(--warm-600)", marginBottom: 4 }}>Good morning ☀️</div>
-          <div style={{ fontSize: 22, fontWeight: 900, color: "var(--warm-700)", marginBottom: 8 }}>小明同学</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "var(--warm-700)", marginBottom: 8 }}>WordWise 学习者</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <span className="badge badge-warm"><FireIcon size={14} /> 连续7天</span>
-            <span className="badge badge-green"><StarIcon size={14} filled /> Lv.12</span>
+            <span className="badge badge-green"><StarIcon size={14} filled /> Lv.{Math.floor(words.length / 10) + 1}</span>
           </div>
         </div>
         <div className="float-anim">
@@ -784,7 +914,7 @@ const HomePage = () => {
           <div className="stats-ring">
             <svg width="72" height="72" viewBox="0 0 72 72">
               <circle cx="36" cy="36" r="30" fill="none" stroke="var(--warm-100)" strokeWidth="6" />
-              <circle cx="36" cy="36" r="30" fill="none" stroke="url(#grad1)" strokeWidth="6" strokeDasharray={`${0.65 * 188} ${188}`} strokeLinecap="round" transform="rotate(-90 36 36)" />
+              <circle cx="36" cy="36" r="30" fill="none" stroke="url(#grad1)" strokeWidth="6" strokeDasharray={`${(reviewProgress / 100) * 188} ${188}`} strokeLinecap="round" transform="rotate(-90 36 36)" />
               <defs>
                 <linearGradient id="grad1" x1="0%" y1="0%" x2="100%">
                   <stop offset="0%" stopColor="var(--warm-400)" />
@@ -793,26 +923,35 @@ const HomePage = () => {
               </defs>
             </svg>
             <div className="stats-ring-text">
-              <span>65%</span>
+              <span>{reviewProgress}%</span>
               <span className="stats-ring-label">完成</span>
             </div>
           </div>
         </div>
         <div className="progress-track" style={{ marginBottom: 12 }}>
-          <div className="progress-fill" style={{ width: "65%" }} />
+          <div className="progress-fill" style={{ width: `${reviewProgress}%` }} />
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn-primary" style={{ flex: 2 }}>开始复习</button>
-          <button className="btn-outline" style={{ flex: 1, padding: "12px 8px" }}>测验</button>
+          <button className="btn-primary" style={{ flex: 2 }} onClick={() => onStartLearn && onStartLearn()}>开始复习</button>
+          <button className="btn-outline" style={{ flex: 1, padding: "12px 8px" }} onClick={() => setActivePage && setActivePage('quiz')}>测验</button>
         </div>
       </div>
+
+      {/* Daily Words Card - 每日推送 */}
+      <DailyWordsCard
+        dailyWords={dailyWords || []}
+        currentBook={currentBook}
+        onStartLearn={() => setActivePage('vocablearn')}
+        onChangeBook={onChangeBook}
+        onWordClick={onWordClick}
+      />
 
       {/* Quick Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
         {[
-          { label: "总词汇", value: "128", icon: "📚" },
-          { label: "已掌握", value: "43", icon: "✅" },
-          { label: "正确率", value: "78%", icon: "🎯" },
+          { label: "总词汇", value: String(words.length), icon: "📚" },
+          { label: "已掌握", value: String(masteredWords.length), icon: "✅" },
+          { label: "正确率", value: `${correctRate}%`, icon: "🎯" },
         ].map((s, i) => (
           <div key={i} className="card" style={{ textAlign: "center", padding: 14, animationDelay: `${i * 0.1}s` }}>
             <div style={{ fontSize: 22, marginBottom: 4 }}>{s.icon}</div>
@@ -846,104 +985,178 @@ const HomePage = () => {
 };
 
 // PAGE 2: CAMERA / OCR
-const CameraPage = ({ onScanComplete }) => {
-  const [scanning, setScanning] = useState(false);
-  const [scanned, setScanned] = useState(false);
-  const [selectedWords, setSelectedWords] = useState(new Set(["determine", "accomplish", "enthusiasm", "brilliant", "consequence"]));
-  
-  const ocrResults = ["determine", "accomplish", "The", "student", "enthusiasm", "was", "brilliant", "consequence", "in", "and", "to", "persuade", "reluctant"];
-  const englishWords = ocrResults.filter(w => w.length > 3 && w[0] === w[0].toLowerCase() === false || ["determine","accomplish","enthusiasm","brilliant","consequence","persuade","reluctant"].includes(w));
+const CameraPage = ({ addWords }) => {
+  const { user } = useAuth()
+  const [preview, setPreview] = useState(null)
+  const [words, setWords] = useState([])
+  const [selected, setSelected] = useState(new Set())
+  const [status, setStatus] = useState("idle")
+  const [error, setError] = useState("")
+  const [savedCount, setSavedCount] = useState(0)
+  const fileRef = useRef(null)
 
-  const handleShutter = () => {
-    setScanning(true);
-    setTimeout(() => {
-      setScanning(false);
-      setScanned(true);
-    }, 2000);
-  };
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPreview(URL.createObjectURL(file))
+    setStatus("scanning")
+    setError("")
+    try {
+      const base64 = await toBase64(file)
+      const mediaType = file.type || "image/jpeg"
+      const found = await recognizeWords(base64, mediaType)
+      setWords(found)
+      setSelected(new Set(found))
+      setStatus("confirming")
+    } catch (err) {
+      setError("识别失败，请重试")
+      setStatus("idle")
+    }
+  }
 
-  const toggleWord = (w) => {
-    setSelectedWords(prev => {
-      const next = new Set(prev);
-      next.has(w) ? next.delete(w) : next.add(w);
-      return next;
-    });
-  };
+  const toggle = (w) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(w) ? next.delete(w) : next.add(w)
+    return next
+  })
+
+  const handleSave = async () => {
+    if (!selected.size || !user) {
+      if (!user) setError("请先登录");
+      return;
+    }
+    setStatus("saving")
+    setError("")
+    try {
+      const wordList = [...selected]
+      let wordsToAdd
+      try {
+        const results = await batchLookup(wordList)
+        if (Array.isArray(results) && results.length > 0) {
+          wordsToAdd = results.map(item => ({
+            word: item.word || '',
+            meaning: item.definition || '',
+            phonetic: item.phonetic || '',
+          })).filter(w => w.word.trim())
+        } else {
+          wordsToAdd = wordList.map(w => ({ word: w, meaning: '', phonetic: '' }))
+        }
+      } catch {
+        wordsToAdd = wordList.map(w => ({ word: w, meaning: '', phonetic: '' }))
+      }
+      if (wordsToAdd.length === 0) {
+        wordsToAdd = wordList.map(w => ({ word: w, meaning: '', phonetic: '' }))
+      }
+      const saved = await addWords(wordsToAdd)
+      setSavedCount(saved?.length || 0)
+      setStatus("done")
+      setTimeout(() => {
+        setPreview(null); setWords([]); setSelected(new Set()); setStatus("idle")
+      }, 2000)
+    } catch (err) {
+      console.error("保存失败:", err)
+      setError("保存失败: " + (err?.message || "请重试"))
+      setStatus("idle")
+    }
+  }
 
   return (
     <div className="page-content" style={{ paddingTop: 8 }}>
       <div className="page-label">拍照识别</div>
       <div className="page-heading">拍一拍，记单词 📸</div>
 
-      {!scanned ? (
+      <input ref={fileRef} type="file" accept="image/*" capture="environment"
+        onChange={handleFile} style={{ display: "none" }} />
+
+      {status === "idle" && (
         <>
-          <div className="camera-viewfinder">
+          <div className="camera-viewfinder" onClick={() => fileRef.current?.click()} style={{ cursor: "pointer" }}>
             <div className="camera-frame">
               <CameraIcon size={36} />
-              <div className="camera-frame-text">
-                {scanning ? "正在识别中..." : "将试卷或课本放入框内"}
-              </div>
-            </div>
-            {scanning && <div className="scan-line" />}
-            {/* Fake text overlay to simulate paper */}
-            <div style={{ position: "absolute", top: 20, left: 20, right: 20, opacity: 0.08, fontSize: 11, color: "white", lineHeight: 2, pointerEvents: "none" }}>
-              The student showed great enthusiasm for learning. The brilliant consequence of hard work is the ability to accomplish anything. One must determine their goals and persuade others with reluctant effort...
+              <div className="camera-frame-text">点击拍照或选择图片</div>
             </div>
           </div>
-          <button className="shutter-btn" onClick={handleShutter}>
+          <button className="shutter-btn" onClick={() => fileRef.current?.click()}>
             <div className="shutter-inner" />
           </button>
           <div style={{ textAlign: "center", fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
-            {scanning ? "AI 正在识别英文单词..." : "点击拍照按钮开始识别"}
+            支持拍照或从相册选取，圈划的单词将被自动识别
           </div>
+          {error && <div style={{ textAlign: "center", color: "var(--coral-500)", marginTop: 12, fontWeight: 700 }}>{error}</div>}
         </>
-      ) : (
+      )}
+
+      {status === "scanning" && (
+        <div className="card" style={{ textAlign: "center", padding: 40 }}>
+          {preview && <img src={preview} alt="预览" style={{ width: "100%", borderRadius: 12, marginBottom: 16, maxHeight: 200, objectFit: "cover" }} />}
+          <div className="scan-line" style={{ position: "relative", margin: "0 auto 16px", width: "80%", height: 2, background: "var(--warm-400)", animation: "shimmer 1.5s linear infinite" }} />
+          <div style={{ fontWeight: 700, color: "var(--warm-600)" }}>AI 正在识别单词...</div>
+        </div>
+      )}
+
+      {status === "confirming" && (
         <div style={{ animation: "fadeUp 0.4s ease-out" }}>
+          {preview && <img src={preview} alt="预览" style={{ width: "100%", borderRadius: 16, marginBottom: 12, maxHeight: 180, objectFit: "cover" }} />}
           <div className="card" style={{ background: "linear-gradient(135deg, #FEF3C7, #FFEDD5)", marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <CheckCircle size={22} />
               <span style={{ fontWeight: 800, fontSize: 16, color: "var(--warm-700)" }}>识别完成！</span>
-              <span className="badge badge-warm" style={{ marginLeft: "auto" }}>发现 7 个单词</span>
+              <span className="badge badge-warm" style={{ marginLeft: "auto" }}>发现 {words.length} 个单词</span>
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
-              点击选择你需要记忆的单词：
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, marginTop: 8 }}>
+              点击选择要收录的单词：
             </div>
           </div>
-
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-              {englishWords.map(w => (
-                <div
-                  key={w}
-                  className={`word-chip ${selectedWords.has(w) ? "selected" : "unselected"}`}
-                  onClick={() => toggleWord(w)}
-                >
-                  {selectedWords.has(w) ? "✓" : "+"} {w}
+            {words.length === 0
+              ? <div style={{ textAlign: "center", color: "var(--text-secondary)", padding: 20 }}>未识别到单词，请重试</div>
+              : <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                  {words.map(w => (
+                    <div key={w} className={`word-chip ${selected.has(w) ? "selected" : "unselected"}`} onClick={() => toggle(w)}>
+                      {selected.has(w) ? "✓" : "+"} {w}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+            }
           </div>
-
-          <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
-            <button className="btn-outline" style={{ flex: 1 }} onClick={() => setScanned(false)}>重新拍照</button>
-            <button className="btn-primary" style={{ flex: 2 }}>
-              收录 {selectedWords.size} 个单词
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button className="btn-outline" style={{ flex: 1 }} onClick={() => { setStatus("idle"); setPreview(null) }}>重拍</button>
+            <button className="btn-primary" style={{ flex: 2 }} onClick={handleSave} disabled={!selected.size}>
+              收录 {selected.size} 个单词 →
             </button>
           </div>
         </div>
       )}
+
+      {status === "saving" && (
+        <div className="card" style={{ textAlign: "center", padding: 40 }}>
+          <div style={{ fontWeight: 700, color: "var(--warm-600)" }}>正在查询释义并保存...</div>
+        </div>
+      )}
+
+      {status === "done" && (
+        <div className="card" style={{ textAlign: "center", padding: 40, animation: "bounceIn 0.5s ease-out" }}>
+          <OwlMascot size={80} mood="celebrate" />
+          <div style={{ fontWeight: 800, fontSize: 18, color: "var(--warm-700)", marginTop: 12 }}>
+            成功收录 {savedCount} 个单词！🎉
+          </div>
+        </div>
+      )}
     </div>
-  );
-};
+  )
+}
 
 // PAGE 3: WORD BOOK
-const WordBookPage = ({ onSelectWord }) => {
+const WordBookPage = ({ words = [], onDeleteWord }) => {
   const [filter, setFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("date");
 
-  const filteredWords = sampleWords.filter(w => {
-    if (filter === "today") return w.nextReview === "今天";
-    if (filter === "mastered") return w.stage >= 5;
+  const isReviewToday = (w) => new Date(w.next_review_at) <= new Date();
+  const todayCount = words.filter(isReviewToday).length;
+  const masteredCount = words.filter((w) => w.ebbinghaus_stage >= 5).length;
+
+  const filteredWords = words.filter(w => {
+    if (filter === "today") return isReviewToday(w);
+    if (filter === "mastered") return w.ebbinghaus_stage >= 5;
     return true;
   });
 
@@ -955,9 +1168,9 @@ const WordBookPage = ({ onSelectWord }) => {
       {/* Filter Tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
         {[
-          { key: "all", label: "全部", count: sampleWords.length },
-          { key: "today", label: "今日复习", count: sampleWords.filter(w => w.nextReview === "今天").length },
-          { key: "mastered", label: "已掌握", count: sampleWords.filter(w => w.stage >= 5).length },
+          { key: "all", label: "全部", count: words.length },
+          { key: "today", label: "今日复习", count: todayCount },
+          { key: "mastered", label: "已掌握", count: masteredCount },
         ].map(f => (
           <button
             key={f.key}
@@ -982,40 +1195,56 @@ const WordBookPage = ({ onSelectWord }) => {
         ))}
       </div>
 
-      {/* Word List */}
+      {/* Empty State */}
+      {filteredWords.length === 0 ? (
+        <div className="card" style={{ textAlign: "center", padding: 40 }}>
+          <OwlMascot size={70} mood="thinking" />
+          <div style={{ marginTop: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
+            还没有单词，去拍一张吧 📸
+          </div>
+        </div>
+      ) : (
+      /* Word List */
       <div className="card" style={{ padding: "8px 20px" }}>
         {filteredWords.map((w, i) => (
           <div
             key={w.id}
             className="word-item"
-            onClick={() => onSelectWord?.(w)}
             style={{ animationDelay: `${i * 0.05}s`, animation: "slideRight 0.3s ease-out backwards" }}
           >
-            <div className="word-stage-dot" style={{ background: stageColors[w.stage] }} />
+            <div className="word-stage-dot" style={{ background: stageColors[w.ebbinghaus_stage] }} />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                 <span style={{ fontSize: 17, fontWeight: 800 }}>{w.word}</span>
                 <span style={{ fontSize: 12, color: "var(--text-light)", fontWeight: 600 }}>{w.phonetic}</span>
               </div>
-              <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, marginTop: 2 }}>{w.meaning}</div>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, marginTop: 2 }}>{w.meaning || "暂无释义"}</div>
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <div style={{ 
-                fontSize: 11, fontWeight: 800, 
-                color: stageColors[w.stage],
+              <div style={{
+                fontSize: 11, fontWeight: 800,
+                color: stageColors[w.ebbinghaus_stage],
                 padding: "2px 8px",
                 borderRadius: 10,
-                background: `${stageColors[w.stage]}15`,
+                background: `${stageColors[w.ebbinghaus_stage]}15`,
               }}>
-                {stageLabels[w.stage]}
+                {stageLabels[w.ebbinghaus_stage]}
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-light)", fontWeight: 600, marginTop: 4 }}>
-                {w.nextReview === "今天" ? "⏰ 今天" : w.nextReview}
-              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDeleteWord(w.id); }}
+                style={{
+                  fontSize: 11, color: "var(--text-light)", fontWeight: 600,
+                  marginTop: 4, background: "none", border: "none",
+                  cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                删除
+              </button>
             </div>
           </div>
         ))}
       </div>
+      )}
 
       {/* Ebbinghaus Legend */}
       <div className="card" style={{ marginTop: 8, padding: 14 }}>
@@ -1038,13 +1267,45 @@ const WordBookPage = ({ onSelectWord }) => {
 };
 
 // PAGE 4: FLASHCARD LEARNING
-const FlashcardPage = () => {
+const FlashcardPage = ({ words = [], updateWord, vocabMarkWord }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const todayWords = sampleWords.filter(w => w.nextReview === "今天");
-  const word = todayWords[currentIndex] || todayWords[0];
 
-  const handleNext = (known) => {
+  // 合并两类复习词：个人词库到期词 + 词书标记为不认识的词
+  const { reviewWords: vocabUnknownWords } = useReviewWords(words);
+  const seen = new Set(vocabUnknownWords.map(w => w.id));
+  const personalReviewWords = words.filter(
+    (w) => new Date(w.next_review_at) <= new Date() && !seen.has(w.id)
+  );
+  const todayWords = [...vocabUnknownWords, ...personalReviewWords];
+
+  if (todayWords.length === 0) {
+    return (
+      <div className="page-content" style={{ paddingTop: 8, textAlign: "center" }}>
+        <OwlMascot size={90} mood="celebrate" />
+        <div style={{ marginTop: 16, fontSize: 18, fontWeight: 800, color: "var(--warm-700)" }}>
+          今天的单词都复习完啦！🎉
+        </div>
+        <div style={{ marginTop: 8, fontSize: 14, color: "var(--text-secondary)" }}>
+          去拍照收录更多单词吧
+        </div>
+      </div>
+    );
+  }
+
+  const word = todayWords[currentIndex % todayWords.length];
+
+  const handleNext = async (known) => {
+    try {
+      // 区分两类单词：词书来源的用 vocabMarkWord，个人词库用 updateWord
+      if (word._source === "vocab_unknown" && vocabMarkWord) {
+        await vocabMarkWord(word.id, known);
+      } else {
+        await updateWord(word.id, known);
+      }
+    } catch (err) {
+      console.error("更新失败:", err);
+    }
     setFlipped(false);
     setTimeout(() => {
       setCurrentIndex((currentIndex + 1) % todayWords.length);
@@ -1071,9 +1332,9 @@ const FlashcardPage = () => {
             <div style={{ position: "absolute", top: 16, right: 20 }}>
               <span style={{
                 fontSize: 11, fontWeight: 800, padding: "3px 10px",
-                borderRadius: 10, background: `${stageColors[word.stage]}15`, color: stageColors[word.stage],
+                borderRadius: 10, background: `${stageColors[word.ebbinghaus_stage]}15`, color: stageColors[word.ebbinghaus_stage],
               }}>
-                {stageLabels[word.stage]}
+                {stageLabels[word.ebbinghaus_stage]}
               </span>
             </div>
             <div className="flashcard-word">{word.word}</div>
@@ -1083,17 +1344,22 @@ const FlashcardPage = () => {
               width: 44, height: 44, cursor: "pointer", display: "flex",
               alignItems: "center", justifyContent: "center", marginTop: 8,
               color: "var(--warm-500)", transition: "all 0.2s",
-            }} onClick={(e) => { e.stopPropagation(); }}>
+            }} onClick={(e) => { e.stopPropagation(); speak(word.word, 'us'); }}>
               <SpeakerIcon size={22} />
             </button>
             <div className="flashcard-hint">👆 点击卡片翻转查看释义</div>
           </div>
           <div className="flashcard-face flashcard-back">
+            {/* 🆕 AI 配图 — 翻转到背面时展示 */}
+            {flipped && (
+              <WordAiImage
+                word={word.word}
+                meaning={word.meaning}
+                size={140}
+              />
+            )}
             <div style={{ fontSize: 18, marginBottom: 8 }}>🎯</div>
-            <div className="flashcard-meaning">{word.meaning}</div>
-            <div style={{ fontSize: 14, color: "var(--text-secondary)", fontWeight: 600, marginTop: 8, textAlign: "center", fontStyle: "italic" }}>
-              "Hard work can accomplish great things."
-            </div>
+            <div className="flashcard-meaning">{word.meaning || "暂无释义"}</div>
             <div className="flashcard-hint">👆 再次点击翻转回正面</div>
           </div>
         </div>
@@ -1132,14 +1398,55 @@ const FlashcardPage = () => {
 };
 
 // PAGE 5: QUIZ
-const QuizPage = () => {
+const QuizPage = ({ words = [] }) => {
+  const [questions, setQuestions] = useState([]);
   const [currentQ, setCurrentQ] = useState(0);
   const [selected, setSelected] = useState(null);
   const [answered, setAnswered] = useState(false);
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [showResult, setShowResult] = useState(false);
 
-  const q = quizQuestions[currentQ];
+  useEffect(() => {
+    if (words.length < 4) return;
+    const shuffled = [...words].sort(() => Math.random() - 0.5);
+    const picked = shuffled.slice(0, Math.min(10, words.length));
+
+    const qs = picked.map((w) => {
+      const others = words
+        .filter((o) => o.id !== w.id && o.meaning)
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 3)
+        .map((o) => o.meaning);
+      const options = [...others, w.meaning || w.word].sort(() => Math.random() - 0.5);
+      return {
+        wordId: w.id,
+        word: w.word,
+        correct: w.meaning || w.word,
+        options,
+        type: "meaning",
+      };
+    });
+    setQuestions(qs);
+  }, [words]);
+
+  if (words.length < 4) {
+    return (
+      <div className="page-content" style={{ paddingTop: 8, textAlign: "center" }}>
+        <OwlMascot size={90} mood="thinking" />
+        <div style={{ marginTop: 16, fontSize: 18, fontWeight: 800, color: "var(--warm-700)" }}>
+          至少需要 4 个单词才能开始测验
+        </div>
+        <div style={{ marginTop: 8, fontSize: 14, color: "var(--text-secondary)" }}>
+          去拍照收录更多单词吧 📸
+        </div>
+      </div>
+    );
+  }
+
+  if (questions.length === 0) return null;
+
+  const q = questions[currentQ];
+  if (!q) return null;
 
   const handleSelect = (opt) => {
     if (answered) return;
@@ -1153,7 +1460,7 @@ const QuizPage = () => {
   };
 
   const handleNext = () => {
-    if (currentQ < quizQuestions.length - 1) {
+    if (currentQ < questions.length - 1) {
       setCurrentQ(currentQ + 1);
       setSelected(null);
       setAnswered(false);
@@ -1229,7 +1536,7 @@ const QuizPage = () => {
             ))}
           </div>
         </div>
-        <button className="btn-primary" style={{ marginTop: 12 }} onClick={() => { setShowResult(false); setCurrentQ(0); setScore({correct:0,total:0}); setSelected(null); setAnswered(false); }}>
+        <button className="btn-primary" style={{ marginTop: 12 }} onClick={() => { setShowResult(false); setCurrentQ(0); setScore({correct:0,total:0}); setSelected(null); setAnswered(false); setQuestions(prev => [...prev].sort(() => Math.random() - 0.5)); }}>
           再来一轮 🔄
         </button>
       </div>
@@ -1241,11 +1548,11 @@ const QuizPage = () => {
       <div className="page-label">单词测验</div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <div className="page-heading" style={{ marginBottom: 0 }}>选择正确释义 🧠</div>
-        <span className="badge badge-warm">{currentQ + 1} / {quizQuestions.length}</span>
+        <span className="badge badge-warm">{currentQ + 1} / {questions.length}</span>
       </div>
 
       <div className="progress-track" style={{ marginBottom: 20, height: 6 }}>
-        <div className="progress-fill" style={{ width: `${((currentQ + 1) / quizQuestions.length) * 100}%` }} />
+        <div className="progress-fill" style={{ width: `${((currentQ + 1) / questions.length) * 100}%` }} />
       </div>
 
       {/* Question Card */}
@@ -1262,7 +1569,7 @@ const QuizPage = () => {
           background: "none", border: "none", cursor: "pointer",
           color: "var(--warm-500)", marginTop: 8, display: "inline-flex",
           alignItems: "center", gap: 4, fontSize: 13, fontWeight: 600, fontFamily: "inherit",
-        }}>
+        }} onClick={() => speak(q.word, 'us')}>
           <SpeakerIcon size={16} /> 播放发音
         </button>
       </div>
@@ -1304,7 +1611,7 @@ const QuizPage = () => {
             </span>
           </div>
           <button className="btn-primary" style={{ marginTop: 12 }} onClick={handleNext}>
-            {currentQ < quizQuestions.length - 1 ? "下一题 →" : "查看结果 🎉"}
+            {currentQ < questions.length - 1 ? "下一题 →" : "查看结果 🎉"}
           </button>
         </div>
       )}
@@ -1321,13 +1628,50 @@ const QuizPage = () => {
 // ============ MAIN APP ============
 export default function WordWiseApp() {
   const [activePage, setActivePage] = useState("home");
+  const { user, loading } = useAuth();
+  const { words, addWords, deleteWord, updateWord } = useWords();
+
+  const [showBookSelector, setShowBookSelector] = useState(false);
+  const [selectedWord, setSelectedWord] = useState(null);
+
+  // 🆕 词书学习 hook — 必须在所有条件 return 之前调用
+  const vocabLearn = useVocabLearn();
+  const { books, currentBook, dailyWords, selectBook, markWord, markVocabWord } = vocabLearn;
+
+  // 加载中
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-main)" }}>
+        <OwlMascot size={80} mood="thinking" className="float-anim" />
+      </div>
+    );
+  }
+
+  // 未登录，显示登录页
+  if (!user) {
+    return (
+      <>
+        <style>{styles}</style>
+        <LoginPage onLogin={() => {}} />
+      </>
+    );
+  }
 
   const pages = {
-    home: <HomePage />,
-    camera: <CameraPage />,
-    wordbook: <WordBookPage />,
-    flashcard: <FlashcardPage />,
-    quiz: <QuizPage />,
+    home: <HomePage
+      words={words}
+      dailyWords={dailyWords}
+      currentBook={currentBook}
+      onStartLearn={() => setActivePage('flashcard')}
+      onChangeBook={() => setShowBookSelector(true)}
+      onWordClick={(w) => setSelectedWord(w)}
+      setActivePage={setActivePage}
+    />,
+    camera: <CameraPage addWords={addWords} />,
+    wordbook: <WordBookPage words={words} onDeleteWord={deleteWord} />,
+    flashcard: <FlashcardPage words={words} updateWord={updateWord} vocabMarkWord={markVocabWord} />,
+    quiz: <QuizPage words={words} />,
+    vocablearn: <VocabLearnPage {...vocabLearn} />,
   };
 
   return (
@@ -1339,7 +1683,12 @@ export default function WordWiseApp() {
         {/* Header */}
         <div className="header" style={{ position: "relative", zIndex: 10 }}>
           <div className="header-title">WordWise 🦉</div>
-          <div className="header-avatar">明</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={() => signOut()} style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", background: "none", border: "none", cursor: "pointer" }}>
+              退出
+            </button>
+            <div className="header-avatar">{user.email?.[0].toUpperCase()}</div>
+          </div>
         </div>
 
         {/* Page Content */}
@@ -1350,25 +1699,38 @@ export default function WordWiseApp() {
         {/* Tab Bar */}
         <div className="tab-bar">
           <button className={`tab-item ${activePage === "home" ? "active" : ""}`} onClick={() => setActivePage("home")}>
-            <HomeIcon size={22} />
-            <span>首页</span>
+            <HomeIcon size={22} /><span>首页</span>
           </button>
           <button className={`tab-item ${activePage === "wordbook" ? "active" : ""}`} onClick={() => setActivePage("wordbook")}>
-            <BookIcon size={22} />
-            <span>词库</span>
+            <BookIcon size={22} /><span>词库</span>
           </button>
           <button className="tab-item camera-tab" onClick={() => setActivePage("camera")}>
             <CameraIcon size={26} />
           </button>
-          <button className={`tab-item ${activePage === "flashcard" ? "active" : ""}`} onClick={() => setActivePage("flashcard")}>
-            <FlashcardIcon size={22} />
-            <span>学习</span>
+          <button className={`tab-item ${activePage === "vocablearn" ? "active" : ""}`} onClick={() => setActivePage("vocablearn")}>
+            <FlashcardIcon size={22} /><span>词书</span>
           </button>
           <button className={`tab-item ${activePage === "quiz" ? "active" : ""}`} onClick={() => setActivePage("quiz")}>
-            <QuizIcon size={22} />
-            <span>测验</span>
+            <QuizIcon size={22} /><span>测验</span>
           </button>
         </div>
+
+        {/* 🆕 弹窗层 */}
+        {showBookSelector && (
+          <VocabBookSelector
+            books={books}
+            currentBook={currentBook}
+            onSelect={(id) => { selectBook(id); setShowBookSelector(false); }}
+            onClose={() => setShowBookSelector(false)}
+          />
+        )}
+        {selectedWord && (
+          <WordDetailModal
+            word={selectedWord}
+            onClose={() => setSelectedWord(null)}
+            onMarkWord={markWord}
+          />
+        )}
       </div>
     </>
   );
