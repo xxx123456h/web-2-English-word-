@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { PronounceButton } from './PronounceButton';
 import { WordAiImage } from './WordAiImage';
+import { ExampleSentence } from './ExampleSentence';
 import { speak } from '../lib/services/pronunciation';
 import { generateMemoryTip, getLocalMemoryTip } from '../lib/services/aiMemory';
 
@@ -87,19 +88,17 @@ export const WordDetailModal = ({ word, onClose, onMarkWord, accent = 'us' }) =>
           </div>
         </div>
 
-        {/* Example */}
+        {/* Example — 使用新组件：点击整句朗读 + 目标词高亮 + 句意配图 */}
         {(word.example || memoryData?.example) && (
-          <div className="memory-section" style={{ borderLeftColor: 'var(--warm-400)' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--warm-600)', marginBottom: 4 }}>📖 例句</div>
-            <div style={{ fontSize: 14, fontWeight: 600, fontStyle: 'italic' }}>
-              {word.example || memoryData?.example}
-            </div>
-            {memoryData?.exampleCN && (
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600, marginTop: 4 }}>
-                {memoryData.exampleCN}
-              </div>
-            )}
-          </div>
+          <ExampleSentence
+            sentence={word.example || memoryData?.example}
+            translation={word.example_cn || memoryData?.exampleCN}
+            word={word.word}
+            meaning={word.meaning}
+            accent={accent}
+            size={180}
+            showImage={true}
+          />
         )}
 
         {/* Action Buttons */}

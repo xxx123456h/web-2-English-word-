@@ -1,6 +1,8 @@
 // src/components/WordSceneArt.jsx
 // 根据 Claude 生成的可视化场景描述，渲染为简洁 CSS 插图
 // 零成本、零外部依赖，立即可用
+//
+// 升级：当提供 exampleSentence 时，缓存 key 会纳入例句，生成时也会以例句场景为中心
 
 import { useState, useEffect } from 'react';
 import { generateScene } from '../lib/services/sceneGen';
@@ -12,7 +14,7 @@ const MOOD_GRADIENTS = {
   warm:   'linear-gradient(135deg, #FECACA 0%, #F43F5E 100%)',
 };
 
-export function WordSceneArt({ word, meaning, size = 160 }) {
+export function WordSceneArt({ word, meaning, exampleSentence, size = 160 }) {
   const [scene, setScene] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -21,7 +23,8 @@ export function WordSceneArt({ word, meaning, size = 160 }) {
     if (!word) return;
 
     let cancelled = false;
-    const cacheKey = `scene::${(word || '').toLowerCase()}::${meaning || ''}`;
+    // 缓存 key 纳入例句，例句不同时场景描述也不同
+    const cacheKey = `scene::${(word || '').toLowerCase()}::${(meaning || '').slice(0, 30)}::${(exampleSentence || '').slice(0, 40)}`;
 
     if (window.__sceneCache && window.__sceneCache.has(cacheKey)) {
       setScene(window.__sceneCache.get(cacheKey));
@@ -31,7 +34,7 @@ export function WordSceneArt({ word, meaning, size = 160 }) {
 
     (async () => {
       try {
-        const result = await generateScene(word, meaning);
+        const result = await generateScene(word, meaning, exampleSentence);
         if (cancelled) return;
         if (result) {
           if (!window.__sceneCache) window.__sceneCache = new Map();
@@ -46,7 +49,7 @@ export function WordSceneArt({ word, meaning, size = 160 }) {
     })();
 
     return () => { cancelled = true; };
-  }, [word, meaning]);
+  }, [word, meaning, exampleSentence]);
 
   if (error) return null;
   if (!word) return null;
@@ -108,6 +111,27 @@ export function WordSceneArt({ word, meaning, size = 160 }) {
           >
             {word}
           </div>
+          {exampleSentence && (
+            <div
+              style={{
+                fontSize: 9,
+                fontWeight: 600,
+                color: scene.fg,
+                background: 'rgba(255,255,255,0.7)',
+                padding: '1px 6px',
+                borderRadius: 6,
+                maxWidth: size - 12,
+                textAlign: 'center',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                marginTop: -2,
+                opacity: 0.8,
+              }}
+            >
+              📖 {exampleSentence}
+            </div>
+          )}
         </>
       ) : null}
     </div>

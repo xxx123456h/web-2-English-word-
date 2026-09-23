@@ -109,3 +109,31 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* ---- 资料页 select 样式覆盖 ---- */
+.profile-select {
+  /* 关闭态：深色文字 + 暖色边框 + 浅暖底 */
+  color: #1C1917 !important;
+  background-color: #FEF3C7 !important;
+}
+
+/* 下拉项强制深色（部分浏览器/系统继承白色文字） */
+.profile-select option {
+  color: #1C1917 !important;
+  background: #ffffff !important;
+  font-weight: 600;
+  padding: 8px 12px;
+}
+
+/* 已选中项加粗 + 暖色高亮 */
+.profile-select option:checked {
+  background: linear-gradient(135deg, #FEF3C7, #FBBF24) !important;
+  color: #78350F !important;
+  font-weight: 800;
+}
+
+/* 焦点态：更明显 */
+.profile-select:focus {
+  border-color: #F97316 !important;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+}

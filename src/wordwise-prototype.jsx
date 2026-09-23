@@ -13,7 +13,19 @@ import { WordDetailModal } from './components/WordDetailModal';
 import { useVocabLearn } from "./hooks/useVocabLearn"
 import { useReviewWords } from "./hooks/useReviewWords"
 import VocabLearnPage from "./pages/VocabLearnPage"
-import { speak } from './lib/services/pronunciation';
+import ProfilePage from "./pages/ProfilePage"
+import FriendsPage from "./pages/FriendsPage"
+import CheckinPage from "./pages/CheckinPage"
+import RatingBadge from './components/RatingBadge';
+import CheckinCalendar from './components/CheckinCalendar';
+import { renderAvatar } from './components/AvatarAssets';
+import ThemeAvatar from './components/mascots/ThemeAvatar';
+import { useDailyRating } from './hooks/useDailyRating';
+import { useCheckin } from './hooks/useCheckin';
+import { ThemeProvider } from './context/ThemeContext';
+import MascotRenderer from './components/mascots/MascotRenderer';
+import { speak, preloadSentence, speakSentence } from './lib/services/pronunciation';
+import { preloadWordImages } from './lib/services/imageGen';
 
 // ============ CUTE MASCOT SVG COMPONENTS ============
 const OwlMascot = ({ size = 80, mood = "happy", className = "" }) => {
@@ -185,7 +197,7 @@ const LoginPage = ({ onLogin }) => {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "var(--bg-main)" }}>
-      <OwlMascot size={100} mood="happy" className="float-anim" />
+      <MascotRenderer size={100} mood="happy" className="float-anim" />
       <h1 style={{ fontSize: 28, fontWeight: 900, color: "var(--warm-700)", marginTop: 16 }}>WordWise 🦉</h1>
       <p style={{ color: "var(--text-secondary)", marginBottom: 32, fontWeight: 600 }}>智能单词学习助手</p>
 
@@ -875,11 +887,28 @@ const styles = `
 // ============ PAGE COMPONENTS ============
 
 // PAGE 1: HOME / DASHBOARD
+/**
+ * 根据当前时间返回地道英语问候语
+ * 05-11: 早上 / 12-17: 下午 / 18-22: 晚上 / 23-04: 深夜
+ */
+function getTimeBasedGreeting() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return 'Good morning ☀️';
+  if (h >= 12 && h < 14) return 'Good afternoon 🌤️';
+  if (h >= 14 && h < 18) return 'Good afternoon ☕';
+  if (h >= 18 && h < 22) return 'Good evening 🌆';
+  return 'Burning the midnight oil? 🌙';
+}
+
 const HomePage = ({ words = [], dailyWords, currentBook, onStartLearn, onChangeBook, onWordClick, setActivePage }) => {
   const todayWords = words.filter(w => new Date(w.next_review_at) <= new Date());
   const masteredWords = words.filter(w => w.ebbinghaus_stage >= 5);
   const correctRate = words.length > 0 ? Math.round((masteredWords.length / words.length) * 100) : 0;
   const reviewProgress = words.length > 0 ? Math.round(((words.length - todayWords.length) / words.length) * 100) : 0;
+
+  // 评级 + 打卡（来自 useDailyRating / useCheckin）
+  const { rating, feedback } = useDailyRating();
+  const { checkinMap, currentStreak, todayChecked } = useCheckin();
 
   const streakDays = [21,22,23,24,25,26,27,28,29,30];
   const doneUntil = 29;
@@ -891,15 +920,16 @@ const HomePage = ({ words = [], dailyWords, currentBook, onStartLearn, onChangeB
       {/* Welcome Card */}
       <div className="card card-warm" style={{ display: "flex", alignItems: "center", gap: 16, position: "relative", overflow: "hidden" }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--warm-600)", marginBottom: 4 }}>Good morning ☀️</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--warm-600)", marginBottom: 4 }}>{getTimeBasedGreeting()}</div>
           <div style={{ fontSize: 22, fontWeight: 900, color: "var(--warm-700)", marginBottom: 8 }}>WordWise 学习者</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <span className="badge badge-warm"><FireIcon size={14} /> 连续7天</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <span className="badge badge-warm"><FireIcon size={14} /> 连续{currentStreak || 7}天</span>
             <span className="badge badge-green"><StarIcon size={14} filled /> Lv.{Math.floor(words.length / 10) + 1}</span>
+            {rating && <RatingBadge rating={rating} feedback={feedback} />}
           </div>
         </div>
         <div className="float-anim">
-          <OwlMascot size={90} mood="happy" />
+          <MascotRenderer size={90} mood="happy" />
         </div>
       </div>
 
@@ -961,24 +991,20 @@ const HomePage = ({ words = [], dailyWords, currentBook, onStartLearn, onChangeB
         ))}
       </div>
 
-      {/* Streak Calendar */}
-      <div className="section-title">🔥 打卡日历 · 四月</div>
+      {/* Streak Calendar - 替换为真实数据驱动的 CheckinCalendar */}
+      <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        🔥 打卡日历
+        <span onClick={() => setActivePage && setActivePage('checkin')}
+          style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--warm-600)', cursor: 'pointer' }}>
+          查看详情 →
+        </span>
+      </div>
       <div className="card">
-        <div className="streak-grid" style={{ marginBottom: 12 }}>
-          {["一","二","三","四","五","六","日"].map(d => (
-            <div key={d} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: "var(--text-light)", marginBottom: 2 }}>{d}</div>
-          ))}
-          {streakDays.map(d => (
-            <div key={d} className={`streak-day ${d < doneUntil ? "done" : d === 30 ? "today" : "future"}`}>
-              {d < doneUntil && "✓"}
-              {d >= doneUntil && d}
-            </div>
-          ))}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
-          <FireIcon />
-          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--warm-600)" }}>已连续打卡 7 天，继续加油！</span>
-        </div>
+        <CheckinCalendar
+          checkinMap={checkinMap}
+          currentStreak={currentStreak}
+          todayChecked={todayChecked}
+        />
       </div>
     </div>
   );
@@ -988,7 +1014,9 @@ const HomePage = ({ words = [], dailyWords, currentBook, onStartLearn, onChangeB
 const CameraPage = ({ addWords }) => {
   const { user } = useAuth()
   const [preview, setPreview] = useState(null)
-  const [words, setWords] = useState([])
+  // items: [{text: string, type: 'word'|'phrase'|'sentence'}]
+  const [items, setItems] = useState([])
+  // selected: Set<text>（按 text 区分，与 type 解耦）
   const [selected, setSelected] = useState(new Set())
   const [status, setStatus] = useState("idle")
   const [error, setError] = useState("")
@@ -1004,19 +1032,22 @@ const CameraPage = ({ addWords }) => {
     try {
       const base64 = await toBase64(file)
       const mediaType = file.type || "image/jpeg"
+      // recognizeWords 返回 [{text, type}] 结构化数组
       const found = await recognizeWords(base64, mediaType)
-      setWords(found)
-      setSelected(new Set(found))
+      setItems(found)
+      // 默认全选
+      setSelected(new Set(found.map(i => i.text)))
       setStatus("confirming")
     } catch (err) {
-      setError("识别失败，请重试")
+      console.error('识别失败:', err)
+      setError("识别失败：" + (err?.message || "请检查网络或重试"))
       setStatus("idle")
     }
   }
 
-  const toggle = (w) => setSelected(prev => {
+  const toggle = (text) => setSelected(prev => {
     const next = new Set(prev)
-    next.has(w) ? next.delete(w) : next.add(w)
+    next.has(text) ? next.delete(text) : next.add(text)
     return next
   })
 
@@ -1028,36 +1059,61 @@ const CameraPage = ({ addWords }) => {
     setStatus("saving")
     setError("")
     try {
-      const wordList = [...selected]
+      // 仅保存选中的项（保留 type 信息）
+      const selectedItems = items.filter(i => selected.has(i.text))
       let wordsToAdd
       try {
-        const results = await batchLookup(wordList)
+        const results = await batchLookup(selectedItems)
         if (Array.isArray(results) && results.length > 0) {
           wordsToAdd = results.map(item => ({
-            word: item.word || '',
+            word: item.text || '',
             meaning: item.definition || '',
             phonetic: item.phonetic || '',
+            // 句子类型自动填到 example_sentence（便于复习展示完整上下文）
+            example_sentence: item.type === 'sentence' ? item.text : null,
           })).filter(w => w.word.trim())
         } else {
-          wordsToAdd = wordList.map(w => ({ word: w, meaning: '', phonetic: '' }))
+          wordsToAdd = selectedItems.map(it => ({
+            word: it.text,
+            meaning: '',
+            phonetic: '',
+            example_sentence: it.type === 'sentence' ? it.text : null,
+          }))
         }
       } catch {
-        wordsToAdd = wordList.map(w => ({ word: w, meaning: '', phonetic: '' }))
+        wordsToAdd = selectedItems.map(it => ({
+          word: it.text,
+          meaning: '',
+          phonetic: '',
+          example_sentence: it.type === 'sentence' ? it.text : null,
+        }))
       }
       if (wordsToAdd.length === 0) {
-        wordsToAdd = wordList.map(w => ({ word: w, meaning: '', phonetic: '' }))
+        wordsToAdd = selectedItems.map(it => ({
+          word: it.text,
+          meaning: '',
+          phonetic: '',
+          example_sentence: it.type === 'sentence' ? it.text : null,
+        }))
       }
       const saved = await addWords(wordsToAdd)
       setSavedCount(saved?.length || 0)
       setStatus("done")
       setTimeout(() => {
-        setPreview(null); setWords([]); setSelected(new Set()); setStatus("idle")
+        setPreview(null); setItems([]); setSelected(new Set()); setStatus("idle")
       }, 2000)
     } catch (err) {
       console.error("保存失败:", err)
       setError("保存失败: " + (err?.message || "请重试"))
       setStatus("idle")
     }
+  }
+
+  // 统计各类别数量（用于 UI 提示）
+  const typeCounts = {
+    word: items.filter(i => i.type === 'word').length,
+    phrase: items.filter(i => i.type === 'phrase').length,
+    sentence: items.filter(i => i.type === 'sentence').length,
   }
 
   return (
@@ -1080,7 +1136,7 @@ const CameraPage = ({ addWords }) => {
             <div className="shutter-inner" />
           </button>
           <div style={{ textAlign: "center", fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>
-            支持拍照或从相册选取，圈划的单词将被自动识别
+            支持拍照或从相册选取，圈划的单词、短语、句子将被自动识别
           </div>
           {error && <div style={{ textAlign: "center", color: "var(--coral-500)", marginTop: 12, fontWeight: 700 }}>{error}</div>}
         </>
@@ -1090,7 +1146,7 @@ const CameraPage = ({ addWords }) => {
         <div className="card" style={{ textAlign: "center", padding: 40 }}>
           {preview && <img src={preview} alt="预览" style={{ width: "100%", borderRadius: 12, marginBottom: 16, maxHeight: 200, objectFit: "cover" }} />}
           <div className="scan-line" style={{ position: "relative", margin: "0 auto 16px", width: "80%", height: 2, background: "var(--warm-400)", animation: "shimmer 1.5s linear infinite" }} />
-          <div style={{ fontWeight: 700, color: "var(--warm-600)" }}>AI 正在识别单词...</div>
+          <div style={{ fontWeight: 700, color: "var(--warm-600)" }}>AI 正在识别内容...</div>
         </div>
       )}
 
@@ -1101,28 +1157,60 @@ const CameraPage = ({ addWords }) => {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <CheckCircle size={22} />
               <span style={{ fontWeight: 800, fontSize: 16, color: "var(--warm-700)" }}>识别完成！</span>
-              <span className="badge badge-warm" style={{ marginLeft: "auto" }}>发现 {words.length} 个单词</span>
+              <span className="badge badge-warm" style={{ marginLeft: "auto" }}>发现 {items.length} 项</span>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600, marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {typeCounts.word > 0 && <span>📝 单词 {typeCounts.word}</span>}
+              {typeCounts.phrase > 0 && <span>💬 短语 {typeCounts.phrase}</span>}
+              {typeCounts.sentence > 0 && <span>📖 句子 {typeCounts.sentence}</span>}
             </div>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600, marginTop: 8 }}>
-              点击选择要收录的单词：
+              点击选择要收录的内容：
             </div>
           </div>
           <div className="card" style={{ padding: 16 }}>
-            {words.length === 0
-              ? <div style={{ textAlign: "center", color: "var(--text-secondary)", padding: 20 }}>未识别到单词，请重试</div>
-              : <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-                  {words.map(w => (
-                    <div key={w} className={`word-chip ${selected.has(w) ? "selected" : "unselected"}`} onClick={() => toggle(w)}>
-                      {selected.has(w) ? "✓" : "+"} {w}
-                    </div>
-                  ))}
+            {items.length === 0
+              ? <div style={{ textAlign: "center", color: "var(--text-secondary)", padding: 20 }}>未识别到内容，请重试</div>
+              : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {items.map(({ text, type }) => {
+                    const isSel = selected.has(text)
+                    return (
+                      <div
+                        key={text + type}
+                        className={`word-chip ${isSel ? "selected" : "unselected"}`}
+                        onClick={() => toggle(text)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 10,
+                          fontSize: type === 'sentence' ? 13 : 14,
+                          fontWeight: isSel ? 700 : 500,
+                          background: isSel
+                            ? (type === 'word' ? 'linear-gradient(135deg,#FCD34D,#F59E0B)'
+                              : type === 'phrase' ? 'linear-gradient(135deg,#93C5FD,#3B82F6)'
+                              : 'linear-gradient(135deg,#A7F3D0,#10B981)')
+                            : '#F3F4F6',
+                          color: isSel ? '#fff' : 'var(--text-primary)',
+                          border: isSel ? 'none' : '1px solid #E5E7EB',
+                          cursor: 'pointer',
+                          maxWidth: '100%',
+                          transition: 'all 0.15s',
+                          lineHeight: 1.3,
+                        }}
+                      >
+                        <span style={{ marginRight: 4, opacity: 0.85 }}>
+                          {type === 'word' ? '📝' : type === 'phrase' ? '💬' : '📖'}
+                        </span>
+                        {text}
+                      </div>
+                    )
+                  })}
                 </div>
             }
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
             <button className="btn-outline" style={{ flex: 1 }} onClick={() => { setStatus("idle"); setPreview(null) }}>重拍</button>
             <button className="btn-primary" style={{ flex: 2 }} onClick={handleSave} disabled={!selected.size}>
-              收录 {selected.size} 个单词 →
+              收录 {selected.size} 项 →
             </button>
           </div>
         </div>
@@ -1138,7 +1226,7 @@ const CameraPage = ({ addWords }) => {
         <div className="card" style={{ textAlign: "center", padding: 40, animation: "bounceIn 0.5s ease-out" }}>
           <OwlMascot size={80} mood="celebrate" />
           <div style={{ fontWeight: 800, fontSize: 18, color: "var(--warm-700)", marginTop: 12 }}>
-            成功收录 {savedCount} 个单词！🎉
+            成功收录 {savedCount} 项！🎉
           </div>
         </div>
       )}
@@ -1279,6 +1367,37 @@ const FlashcardPage = ({ words = [], updateWord, vocabMarkWord }) => {
   );
   const todayWords = [...vocabUnknownWords, ...personalReviewWords];
 
+  // Preload images for the next batch of cards so flipping feels instant.
+// Fires once on mount and whenever the queue length changes (e.g. after
+// the user marks a card as known and the queue shrinks).
+//
+// Strategy (per user decision: current card + warm next):
+//   * Bulk warm the entire queue at concurrency 3 to fill the shared cache
+//     while the user is on card 1.
+//   * On every currentIndex change, the next-card warmer (effect below)
+//     kicks off generation for the upcoming card specifically.
+useEffect(() => {
+  if (todayWords.length > 0) {
+    // Fire and forget - failures are already logged inside.
+    preloadWordImages(todayWords, { concurrency: 3 });
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [todayWords.length]);
+
+// On every card flip, ensure the NEXT card's image is being generated.
+// This is in addition to the bulk warm above - belt + suspenders. By the
+// time the user clicks "next", the next card's URL is already in the
+// shared cache (or close to it), so the AI image crossfade is near-instant.
+useEffect(() => {
+  if (!todayWords.length) return;
+  const nextWord = todayWords[(currentIndex + 1) % todayWords.length];
+  if (!nextWord?.word) return;
+  // Fire and forget; the preload worker will check the cache first and
+  // skip if already warm.
+  preloadWordImages([nextWord], { concurrency: 1 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [currentIndex, todayWords.length]);
+
   if (todayWords.length === 0) {
     return (
       <div className="page-content" style={{ paddingTop: 8, textAlign: "center" }}>
@@ -1294,6 +1413,12 @@ const FlashcardPage = ({ words = [], updateWord, vocabMarkWord }) => {
   }
 
   const word = todayWords[currentIndex % todayWords.length];
+  const exampleSentence = word.example_sentence || word.example;
+
+  // 卡片内容变化时（切到下一张）预加载例句 MP3
+  useEffect(() => {
+    if (exampleSentence) preloadSentence(exampleSentence, 'us');
+  }, [exampleSentence]);
 
   const handleNext = async (known) => {
     try {
@@ -1350,16 +1475,38 @@ const FlashcardPage = ({ words = [], updateWord, vocabMarkWord }) => {
             <div className="flashcard-hint">👆 点击卡片翻转查看释义</div>
           </div>
           <div className="flashcard-face flashcard-back">
-            {/* 🆕 AI 配图 — 翻转到背面时展示 */}
+            {/* 🆕 AI 配图 — 翻转到背面时展示，配图基于例句场景生成 */}
             {flipped && (
               <WordAiImage
                 word={word.word}
                 meaning={word.meaning}
+                exampleSentence={word.example_sentence || word.example}
                 size={140}
               />
             )}
             <div style={{ fontSize: 18, marginBottom: 8 }}>🎯</div>
             <div className="flashcard-meaning">{word.meaning || "暂无释义"}</div>
+            {/* 🆕 例句点击整句朗读（流畅 MP3，无断句） */}
+            {exampleSentence && (
+              <div
+                onClick={(e) => { e.stopPropagation(); speakSentence(exampleSentence, { accent: 'us' }); }}
+                onMouseEnter={() => preloadSentence(exampleSentence, 'us')}
+                onTouchStart={() => preloadSentence(exampleSentence, 'us')}
+                title="点击朗读整句例句（悬停预加载）"
+                style={{
+                  marginTop: 10, padding: "8px 12px",
+                  background: "rgba(255,255,255,0.7)", borderRadius: 12,
+                  fontSize: 12, fontStyle: "italic", fontWeight: 600,
+                  color: "var(--text-secondary)", lineHeight: 1.5,
+                  cursor: "pointer", userSelect: "text",
+                  border: "1.5px dashed var(--warm-300)",
+                  textAlign: "left", width: "100%", maxWidth: 320,
+                }}
+              >
+                <span style={{ marginRight: 4 }}>📖</span>
+                {exampleSentence}
+              </div>
+            )}
             <div className="flashcard-hint">👆 再次点击翻转回正面</div>
           </div>
         </div>
@@ -1628,7 +1775,7 @@ const QuizPage = ({ words = [] }) => {
 // ============ MAIN APP ============
 export default function WordWiseApp() {
   const [activePage, setActivePage] = useState("home");
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const { words, addWords, deleteWord, updateWord } = useWords();
 
   const [showBookSelector, setShowBookSelector] = useState(false);
@@ -1647,13 +1794,13 @@ export default function WordWiseApp() {
     );
   }
 
-  // 未登录，显示登录页
+  // 未登录，显示登录页（但仍包在 ThemeProvider 内，保持主题）
   if (!user) {
     return (
-      <>
+      <ThemeProvider userId={null}>
         <style>{styles}</style>
         <LoginPage onLogin={() => {}} />
-      </>
+      </ThemeProvider>
     );
   }
 
@@ -1662,7 +1809,7 @@ export default function WordWiseApp() {
       words={words}
       dailyWords={dailyWords}
       currentBook={currentBook}
-      onStartLearn={() => setActivePage('flashcard')}
+      onStartLearn={() => setActivePage('vocablearn')}
       onChangeBook={() => setShowBookSelector(true)}
       onWordClick={(w) => setSelectedWord(w)}
       setActivePage={setActivePage}
@@ -1672,10 +1819,13 @@ export default function WordWiseApp() {
     flashcard: <FlashcardPage words={words} updateWord={updateWord} vocabMarkWord={markVocabWord} />,
     quiz: <QuizPage words={words} />,
     vocablearn: <VocabLearnPage {...vocabLearn} />,
+    profile: <ProfilePage setActivePage={setActivePage} />,
+    friends: <FriendsPage setActivePage={setActivePage} />,
+    checkin: <CheckinPage setActivePage={setActivePage} />,
   };
 
   return (
-    <>
+    <ThemeProvider userId={user?.id}>
       <style>{styles}</style>
       <div className="app-container">
         <div className="bg-pattern" />
@@ -1687,7 +1837,9 @@ export default function WordWiseApp() {
             <button onClick={() => signOut()} style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)", background: "none", border: "none", cursor: "pointer" }}>
               退出
             </button>
-            <div className="header-avatar">{user.email?.[0].toUpperCase()}</div>
+            <div onClick={() => setActivePage("profile")} style={{ cursor: "pointer" }}>
+              <ThemeAvatar profile={profile} size={40} layout="horizontal" showName={true} nameSize={11} />
+            </div>
           </div>
         </div>
 
@@ -1732,6 +1884,6 @@ export default function WordWiseApp() {
           />
         )}
       </div>
-    </>
+    </ThemeProvider>
   );
 }

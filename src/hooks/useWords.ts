@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from './useAuth'
 import * as wordService from '../lib/services/words'
-import { supabase } from '../lib/supabase'
 import type { Word, UserStats } from '../lib/types'
 
 export function useWords() {
@@ -44,29 +43,11 @@ export function useWords() {
     loadStats()
   }, [load, loadStats])
 
-  // Supabase 实时订阅
-  useEffect(() => {
-    if (!user) return
-
-    const channel = supabase
-      .channel('words_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'words',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => { load() }
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [user, load])
+  // 注：原实时订阅 (Realtime channel) 已移除，避免 React 19 StrictMode 双调用
+  // 引发的 channel subscribe 竞态。业务逻辑中已通过 await load() 即时同步。
 
   const addWords = useCallback(async (
-    newWords: { word: string; meaning?: string; phonetic?: string }[]
+    newWords: { word: string; meaning?: string; phonetic?: string; example_sentence?: string | null }[]
   ) => {
     const saved = await wordService.batchAddWords(newWords)
     await load()

@@ -6,24 +6,10 @@
 //   const vocabLearn = useVocabLearn()
 //   pages = { ..., vocablearn: <VocabLearnPage {...vocabLearn} /> }
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WordAiImage } from "../components/WordAiImage";
-
-// ============ 子组件：发音按钮 ============
-const speak = (word, accent = "us") => {
-  if (window.speechSynthesis) {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(word);
-    u.lang = accent === "uk" ? "en-GB" : "en-US";
-    u.rate = 0.85;
-    window.speechSynthesis.speak(u);
-  } else {
-    const type = accent === "uk" ? 1 : 2;
-    new Audio(
-      `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`
-    ).play().catch(() => {});
-  }
-};
+import { ExampleSentence } from "../components/ExampleSentence";
+import { speak, preloadSentence } from "../lib/services/pronunciation";
 
 const SpeakerIcon = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -158,6 +144,13 @@ export default function VocabLearnPage({
   const currentWord = dailyWords[currentIndex] || null;
   const isFinished = currentIndex >= dailyWords.length && dailyWords.length > 0;
   const isEmpty = !loading && !loadingWords && dailyWords.length === 0;
+
+  // 切换到新单词时预加载例句 MP3（用户看到释义时音频已在缓存里）
+  useEffect(() => {
+    if (currentWord?.example) {
+      preloadSentence(currentWord.example, "us");
+    }
+  }, [currentWord?.id, currentWord?.example]);
 
   const handleMark = async (known) => {
     if (!currentWord) return;
@@ -424,18 +417,17 @@ export default function VocabLearnPage({
                     {currentWord.meaning}
                   </div>
                   {currentWord.example && (
-                    <div style={{
-                      marginTop: 12, fontSize: 13, fontWeight: 600,
-                      color: "var(--text-secondary)", fontStyle: "italic",
-                      lineHeight: 1.5,
-                    }}>
-                      "{currentWord.example}"
-                      {currentWord.example_cn && (
-                        <div style={{ fontStyle: "normal", marginTop: 4, color: "var(--text-light)" }}>
-                          {currentWord.example_cn}
-                        </div>
-                      )}
-                    </div>
+                    <ExampleSentence
+                      sentence={currentWord.example}
+                      translation={currentWord.example_cn}
+                      word={currentWord.word}
+                      meaning={currentWord.meaning}
+                      accent="us"
+                      size={140}
+                      showImage={false}
+                      borderColor="var(--warm-400)"
+                      labelColor="var(--warm-600)"
+                    />
                   )}
                   {currentWord.memory_tip && (
                     <div style={{

@@ -12,17 +12,36 @@ export function useAuth() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(false)
 
+  // 加载 profile
+  const loadProfile = useCallback(async (uid) => {
+    if (!uid) {
+      setProfile(null)
+      return null
+    }
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .maybeSingle()
+      setProfile(data)
+      return data
+    } catch (err) {
+      console.warn('profile 加载失败（可能表不存在）:', err?.message)
+      return null
+    }
+  }, [])
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setUser(session?.user ?? null)
         if (session?.user) {
+          // 先尝试 service 拉取（兼容 RLS 不开放的场景）
           try {
-            const p = await authService.ensureProfile()
-            setProfile(p)
-          } catch (err) {
-            console.error('getProfile 失败:', err)
-          }
+            await authService.ensureProfile()
+          } catch {}
+          await loadProfile(session.user.id)
         } else {
           setProfile(null)
         }
@@ -30,7 +49,7 @@ export function useAuth() {
     )
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [loadProfile])
 
   const signIn = useCallback(async (email: string, password: string) => {
     setLoading(true)
@@ -56,6 +75,10 @@ export function useAuth() {
     setProfile(null)
   }, [])
 
+  const refetchProfile = useCallback(() => {
+    if (user) return loadProfile(user.id)
+  }, [user, loadProfile])
+
   return {
     user,
     profile,
@@ -64,5 +87,6 @@ export function useAuth() {
     signIn,
     signUp,
     signOut,
-  }
+    refetchProfile,
+  };
 }

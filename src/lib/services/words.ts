@@ -44,7 +44,7 @@ export async function getTodayReviewWords(): Promise<Word[]> {
 
 // ---------- 批量添加单词（拍照识别后） ----------
 export async function batchAddWords(
-  words: { word: string; meaning?: string; phonetic?: string }[]
+  words: { word: string; meaning?: string; phonetic?: string; example_sentence?: string | null }[]
 ): Promise<Word[]> {
   const user = (await supabase.auth.getUser()).data.user
   if (!user) throw new Error('未登录')
@@ -85,6 +85,7 @@ export async function batchAddWords(
     word: w.word.toLowerCase().trim(),
     meaning: w.meaning || null,
     phonetic: w.phonetic || null,
+    example_sentence: w.example_sentence || null,
     ebbinghaus_stage: 0,
     next_review_at: new Date().toISOString(),
   }))
