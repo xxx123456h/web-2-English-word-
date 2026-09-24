@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'node:path'
+import url from 'node:url'
 
 // 读取 .env.local 把 Key 注入到 process.env，proxy 转发时使用
 // (Vite 不会自动把 .env.local 暴露给 server.proxy 的 headers)
@@ -37,6 +38,10 @@ loadEnvToProcess()
 // Each /api/<name> route maps to api/<name>.js exporting a default handler.
 // The handler is wrapped with a small shim that adapts Vercel's (req, res)
 // to Node's IncomingMessage/ServerResponse (which they already are).
+//
+// 注意：dev middleware 只处理根路径 /api/<name>（单段），子路径（如 /api/ai-relay/v1/...）
+// 一律走 server.proxy / 交给对应的根路径 handler 内部自行处理。这样避免和 proxy 冲突，
+// 也避免 path.join 在 Windows 上遇到多段 routeName 时产生非法 ESM URL。
 function apiDevPlugin() {
   return {
     name: 'api-dev-middleware',
@@ -47,13 +52,18 @@ function apiDevPlugin() {
         const urlPath = req.url.split('?')[0].replace(/\/$/, '');
         const routeName = urlPath.replace(/^\/api\//, '');
         if (!routeName) return next();
+        // 只处理单段根路径：/api/ai-relay → 'ai-relay'
+        // 子路径（如 /api/ai-relay/v1/chat/completions）跳过，让 proxy 或根路径 handler 处理
+        if (routeName.includes('/')) return next();
 
         const handlerPath = path.join(process.cwd(), 'api', `${routeName}.js`);
         if (!fs.existsSync(handlerPath)) return next();
 
         try {
+          // 转成 file:// URL：Windows 绝对路径必须用 file:// scheme 才能被 ESM loader 接受
+          const importUrl = url.pathToFileURL(handlerPath).href;
           // Use a cache-busting query so Vite re-imports the handler on edits
-          const mod = await import(`${handlerPath}?t=${Date.now()}`);
+          const mod = await import(`${importUrl}?t=${Date.now()}`);
           if (typeof mod.default !== 'function') return next();
 
           // Express middleware -> Node handler adapter (Vercel signature)
