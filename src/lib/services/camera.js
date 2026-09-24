@@ -173,7 +173,7 @@ Output format (strict):
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_CLAUDE_API_KEY}`,
+        // 不再发 Authorization：Key 由服务端 ai-relay 从 CLAUDE_API_KEY 环境变量读取，避免前端泄露
       },
       body: JSON.stringify({
         model: VISION_MODEL,
@@ -370,7 +370,7 @@ export const batchLookup = async (items) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${import.meta.env.VITE_CLAUDE_API_KEY}`,
+        // Key 由服务端从 CLAUDE_API_KEY 环境变量注入，前端无需持有
       },
       signal: controller.signal,
       body: JSON.stringify({

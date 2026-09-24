@@ -3,6 +3,27 @@ import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'node:path'
 
+// 读取 .env.local 把 Key 注入到 process.env，proxy 转发时使用
+// (Vite 不会自动把 .env.local 暴露给 server.proxy 的 headers)
+function loadEnvToProcess() {
+  const envPath = path.join(process.cwd(), '.env.local')
+  if (!fs.existsSync(envPath)) return
+  const text = fs.readFileSync(envPath, 'utf8')
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const eq = line.indexOf('=')
+    if (eq < 0) continue
+    const key = line.slice(0, eq).trim()
+    let val = line.slice(eq + 1).trim()
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1)
+    }
+    if (process.env[key] === undefined) process.env[key] = val
+  }
+}
+loadEnvToProcess()
+
 // AI 调用通过 Vite 代理转发到 https://api.ymhss.cn
 // 原因：api.ymhss.cn 不返回 CORS 头，浏览器直接跨域请求会被拦截
 // 代理只在 dev server 生效；生产环境需部署 Vercel/Netlify 函数转发
@@ -56,12 +77,18 @@ export default defineConfig({
   plugins: [react(), apiDevPlugin()],
   server: {
     proxy: {
-      // 旧 Claude 中转站转发
+      // 旧 Claude 中转站转发 — dev 下注入本地 .env.local 里的 Key，prod 由 Vercel 函数处理
       '/api/ai-relay': {
         target: 'https://api.ymhss.cn',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ai-relay/, ''),
         secure: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            const token = (process.env.CLAUDE_API_KEY || process.env.VITE_CLAUDE_API_KEY || '').trim()
+            if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`)
+          })
+        },
       },
       // 兼容老路径 /api/ai (camera.js 等老代码用过的别名)
       // dev 下走代理到中转站,生产环境走 Vercel Serverless (api/ai.js)
@@ -70,6 +97,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ai/, ''),
         secure: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            const token = (process.env.CLAUDE_API_KEY || process.env.VITE_CLAUDE_API_KEY || '').trim()
+            if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`)
+          })
+        },
       },
       // 旧的 AI memory 路由（如果存在）
       '/api/ai-memory': {
@@ -77,6 +110,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ai-memory/, ''),
         secure: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            const token = (process.env.CLAUDE_API_KEY || process.env.VITE_CLAUDE_API_KEY || '').trim()
+            if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`)
+          })
+        },
       }
     }
   }

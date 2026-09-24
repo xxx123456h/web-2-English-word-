@@ -4,16 +4,17 @@
 // 用法（前端）：
 //   fetch('/api/ai-relay/v1/chat/completions', {
 //     method: 'POST',
-//     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer <VITE_CLAUDE_API_KEY>' },
+//     headers: { 'Content-Type': 'application/json' },
 //     body: JSON.stringify({ model, messages, ... })
 //   })
 //
 // 后端转发到：https://api.ymhss.cn/v1/chat/completions
-// Key 从请求头透传（前端持有），避免在前端代码里硬编码中转站 Key
+// Key 从服务端环境变量 CLAUDE_API_KEY 读取（不带 VITE_ 前缀，不暴露给浏览器）
+// 如果前端请求带了 Authorization（兼容旧调用），优先用前端的；否则用服务端的。
 //
 // 生产环境路径：/api/ai-relay/*
 //
-// 注意：此函数不做鉴权，仅做转发。Key 安全靠浏览器侧 import.meta.env。
+// 注意：此函数不做鉴权，仅做转发。Key 安全靠 Vercel Dashboard 配置。
 
 const TARGET_BASE = 'https://api.ymhss.cn';
 
@@ -39,8 +40,20 @@ export default async function handler(req, res) {
   const subPath = (req.url || '').replace(/^\/api\/ai-relay/, '') || '/';
   const targetUrl = TARGET_BASE + subPath;
 
-  // 透传 Authorization 头（由前端从 import.meta.env.VITE_CLAUDE_API_KEY 注入）
-  const authHeader = req.headers.authorization || req.headers.Authorization || '';
+  // 透传 Authorization 头（前端从 import.meta.env.VITE_CLAUDE_API_KEY 注入）
+  // 兜底：如果前端没传 / 传了空值，使用服务端环境变量 CLAUDE_API_KEY（Vercel Dashboard 配置，不带 VITE_ 前缀，不会暴露到前端）。
+  // 这样前端代码可以完全不带 Key，所有 Claude 调用都走服务端鉴权。
+  const headerAuth = req.headers.authorization || req.headers.Authorization || '';
+  const headerToken = headerAuth.replace(/^Bearer\s+/i, '').trim();
+  const serverToken = (process.env.CLAUDE_API_KEY || process.env.VITE_CLAUDE_API_KEY || '').trim();
+  const finalToken = headerToken && headerToken !== 'undefined' && headerToken !== 'anonymous' ? headerToken : serverToken;
+  if (!finalToken) {
+    return res.status(500).json({
+      error: '中转站鉴权失败：未配置 CLAUDE_API_KEY',
+      details: '请在 Vercel Dashboard → Settings → Environment Variables 中配置 CLAUDE_API_KEY（不带 VITE_ 前缀）。',
+    });
+  }
+  const authHeader = `Bearer ${finalToken}`;
 
   try {
     const upstream = await fetch(targetUrl, {

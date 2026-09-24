@@ -57,16 +57,17 @@ Vercel Dashboard → Project → Settings → Environment Variables，逐项添�
 |---|---|---|
 | `VITE_SUPABASE_URL` | Supabase 项目 URL（如 `https://xxx.supabase.co`） | ✅ |
 | `VITE_SUPABASE_ANON_KEY` | Supabase 匿名 key（前端可见，安全） | ✅ |
-| `VITE_CLAUDE_API_KEY` | api.ymhss.cn 中转站 key，用于拍照 OCR 和 Claude 释义 | ✅ |
+| `CLAUDE_API_KEY` | api.ymhss.cn 中转站 key，**服务端专用**（不带 `VITE_` 前缀，不会暴露给浏览器）。用于拍照 OCR / Claude 释义 / 场景生成。 | ✅ |
+| `VITE_CLAUDE_API_KEY` | 兼容变量名，已迁移到 `CLAUDE_API_KEY`，不再需要 | ❌ 废弃 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase 服务端 key（**只在服务端**，用于 daily-push cron） | ✅ |
 | `INFISTAR_API_KEY` | infistar.ai key，用于 AI 单词配图 | ⚠️ 强烈建议 |
 | `INFISTAR_BASE_URL` | infistar.ai 端点，默认 `https://infistar.ai/v1` | ❌ 可选 |
 | `INFISTAR_IMAGE_MODEL` | 模型名，默认 `gpt-image-2.5-flare` | ❌ 可选 |
 | `AI_IMAGE_PROVIDER` | 固定 `infistar` | ❌ 可选 |
 
-> ⚠️ 所有 `VITE_*` 变量会**被打包进前端 JS**，所以这些 key 必须是可以公开暴露的（Supabase anon key / 中转站 key 设计上就是给浏览器用的）。
+> ⚠️ 所有 `VITE_*` 变量会**被打包进前端 JS**。Claude 中转站 Key 现在已迁移到不带前缀的 `CLAUDE_API_KEY`，**只在服务端可访问**，浏览器访问者按 F12 看不到，安全性大幅提升。
 >
-> ⚠️ `INFISTAR_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` **绝对不要**加 `VITE_` 前缀，否则会被打包到前端泄露。
+> ⚠️ `INFISTAR_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` / `CLAUDE_API_KEY` **绝对不要**加 `VITE_` 前缀，否则会被打包到前端泄露。
 
 ### 4. 点击 Deploy
 
@@ -114,8 +115,9 @@ Vercel Dashboard → Project → Settings → Environment Variables，逐项添�
 2. Vercel Function Logs 里有没有 `UNREACHABLE` / `NO_KEY` 错误
 3. 国内网络访问 infistar.ai 受 GFW 影响 — emoji 兜底会自动顶上
 
-### 拍照识别显示 "中转站返回空响应"？
+### 拍照识别显示 "中转站返回空响应" 或 "中转站鉴权失败"？
 
-1. 检查 `VITE_CLAUDE_API_KEY` 是否完整（不是被截断的）
-2. Vercel 函数日志里看 `api/ai-relay.js` 上游响应状态码
-3. 中转站额度是否用尽
+1. 检查 Vercel Dashboard → Environment Variables 里的 `CLAUDE_API_KEY`（不带 `VITE_` 前缀）是否完整
+2. Vercel 函数日志里看 `api/ai-relay.js` 上游响应状态码，以及 `[ai-relay] hit` 诊断行
+3. 本地 dev 下检查 `.env.local` 里 `CLAUDE_API_KEY` 或 `VITE_CLAUDE_API_KEY` 是否存在
+4. 中转站额度是否用尽

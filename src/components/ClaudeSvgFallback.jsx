@@ -121,12 +121,11 @@ Example for "ancient" meaning "古代的":
   const user = `Word: "${word}"\nMeaning: ${meaning || ''}\nReturn JSON.`;
 
   // Use the existing ai-relay route so we don't duplicate the relay logic.
-  const bearer = ''; // The relay is configured at the server; we go through /api/ai-relay.
+  // Key 由服务端 ai-relay 从 CLAUDE_API_KEY 环境变量注入，前端不再持有
   const resp = await fetch('/api/ai-relay/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${bearer || 'anonymous'}`,
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',

@@ -80,7 +80,7 @@ Rules:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_CLAUDE_API_KEY}`,
+        // Key 由服务端从 CLAUDE_API_KEY 环境变量注入，前端无需持有
       },
       body: JSON.stringify({
         model: SCENE_MODEL,
