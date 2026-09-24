@@ -4,7 +4,6 @@
   "devCommand": "npm run dev",
   "outputDirectory": "dist",
   "framework": "vite",
-  "regions": ["sin1"],
   "crons": [
     {
       "path": "/api/daily-push",

@@ -18,6 +18,10 @@
 const TARGET_BASE = 'https://api.ymhss.cn';
 
 export default async function handler(req, res) {
+  // 早期诊断日志：记录入口请求,便于排查 "Vercel 404 没命中函数 vs 中转站出错"
+  // 看到这行 = 路由已命中 ai-relay 函数;看不到 = 请求根本没到这里(Vercel 在路由层 404)
+  console.log('[ai-relay] hit', { method: req.method, url: req.url, hasAuth: !!req.headers.authorization });
+
   // 处理 CORS 预检（部署后浏览器仍会问）
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
