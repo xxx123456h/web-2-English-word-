@@ -1,3 +1,14 @@
+async function forwardWithRetry(url, options, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      console.warn(`第 ${i + 1} 次转发失败：`, err.cause?.code || err.message);
+      if (i === retries) throw err;
+    }
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -10,7 +21,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const upstream = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+    const upstream = await forwardWithRetry(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -23,6 +34,8 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
     res.send(text);
   } catch (err) {
-    res.status(500).json({ error: '转发失败：' + err.message });
+    const cause = err.cause?.code || err.cause?.message || '';
+    console.error('转发失败', err, err.cause);
+    res.status(500).json({ error: `转发失败：${err.message} ${cause}` });
   }
 }
