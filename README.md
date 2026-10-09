@@ -60,7 +60,7 @@ Vercel Dashboard → Project → Settings → Environment Variables，逐项添�
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase 服务端 key（**只在服务端**，用于 daily-push cron） | ✅ |
 | `INFISTAR_API_KEY` | infistar.ai 中转站 key，**服务端专用**（不带 `VITE_` 前缀）。拍照 OCR / 释义 / 场景生成 / AI 配图共用 | ✅ |
 | `INFISTAR_BASE_URL` | infistar.ai 端点，默认 `https://infistar.ai/v1` | ❌ 可选 |
-| `INFISTAR_IMAGE_MODEL` | 模型名，默认 `gpt-image-2.5-flare` | ❌ 可选 |
+| `INFISTAR_IMAGE_MODEL` | 模型名，默认 `gemini-3.1-flash-lite-image` | ❌ 可选 |
 | `AI_IMAGE_PROVIDER` | 固定 `infistar` | ❌ 可选 |
 
 > ⚠️ 所有 `VITE_*` 变量会**被打包进前端 JS**。中转站 Key 使用不带前缀的 `INFISTAR_API_KEY`，**只在服务端可访问**，浏览器访问者按 F12 看不到。
