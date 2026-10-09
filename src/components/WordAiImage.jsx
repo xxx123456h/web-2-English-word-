@@ -34,7 +34,7 @@ export function WordAiImage({ word, meaning, exampleSentence, size = 160 }) {
   const archetype = pickArchetype(word);
 
   // ---- Fork 1: word has no curated archetype ----
-  // Delegate fully to ClaudeSvgFallback. Claude (via api.ymhss.cn) is
+  // Delegate fully to ClaudeSvgFallback. Claude (via /api/ai-relay) is
   // reachable from the user's network and generates a small SVG
   // illustration as a soft fallback. The hook still runs in parallel
   // and overlays a real AI image when it arrives.

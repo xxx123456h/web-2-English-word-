@@ -1,14 +1,14 @@
 // src/lib/services/camera.js
 // 图片转 base64 + AI 视觉识别圈划单词 + 批量释义查询
 //
-// 中转站：https://api.ymhss.cn（Claude Code 官方 Max 通道，OpenAI 兼容）
+// 中转站：https://infistar.ai（OpenAI 兼容，由服务端 INFISTAR_BASE_URL 决定）
 // 视觉模型：claude-sonnet-4-6（速度 + 精度均衡，OCR 比 Haiku 强）
 // 备选：claude-haiku-4-5-20251001（如果 sonnet 不可用降级）
 //
 // 路径策略（统一走 /api/ai-relay）：
-//   - dev (npm run dev): Vite 代理 /api/ai-relay/* → https://api.ymhss.cn/*
-//   - prod (Vercel):     Vercel 函数 api/ai-relay.js → https://api.ymhss.cn/*
-// 原因：api.ymhss.cn 不返回 CORS 头,浏览器直连跨域会被拦截,所以无论 dev 还是 prod
+//   - dev (npm run dev): Vite 代理 /api/ai-relay/* → https://infistar.ai/*
+//   - prod (Vercel):     Vercel 函数 api/ai-relay → https://infistar.ai/*
+// 原因：浏览器不直连中转站（跨域 + Key 只能留在服务端），所以无论 dev 还是 prod
 // 都必须走中转. dev 下用 Vite 代理,prod 下用 Vercel 函数,两者都最终转发到同一中转站.
 
 const VISION_MODEL = 'claude-sonnet-4-6'
@@ -26,7 +26,7 @@ export const toBase64 = (file) => new Promise((resolve, reject) => {
  * 图片预处理：平衡压缩（保证 OCR 精度的同时控制请求体 < 100KB）
  *
  * 关键参数：
- * - api.ymhss.cn 中转站请求体上限 100KB（实测验证）
+ * - 旧中转站请求体上限 100KB（实测验证），沿用该保守限制
  * - OCR 文本识别需要清晰度：长边 1536px（短语/句子比单词更小需要更多像素）
  * - 目标 base64 ≤ 50KB（中转站 100KB - prompt 约 50KB）
  * - 策略：长边 1536px，质量 0.7，递归降到 ≤ 50KB
@@ -173,7 +173,7 @@ Output format (strict):
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // 不再发 Authorization：Key 由服务端 ai-relay 从 CLAUDE_API_KEY 环境变量读取，避免前端泄露
+        // 不再发 Authorization：Key 由服务端 ai-relay 从 INFISTAR_API_KEY 环境变量读取，避免前端泄露
       },
       body: JSON.stringify({
         model: VISION_MODEL,
@@ -197,7 +197,7 @@ Output format (strict):
     // "unexpected end of data",我们用 text() 先读 raw 然后给出可读错误.
     const rawText = await res.text();
     if (!rawText || rawText.trim().length === 0) {
-      throw new Error(`中转站返回空响应 (HTTP ${res.status}). 通常是 key 失效/限额/服务端超时,请检查 VITE_CLAUDE_API_KEY 配置`);
+      throw new Error(`中转站返回空响应 (HTTP ${res.status}). 通常是 key 失效/限额/服务端超时,请检查服务端 INFISTAR_API_KEY 配置`);
     }
     let data;
     try {
@@ -370,7 +370,7 @@ export const batchLookup = async (items) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // Key 由服务端从 CLAUDE_API_KEY 环境变量注入，前端无需持有
+        // Key 由服务端从 INFISTAR_API_KEY 环境变量注入，前端无需持有
       },
       signal: controller.signal,
       body: JSON.stringify({

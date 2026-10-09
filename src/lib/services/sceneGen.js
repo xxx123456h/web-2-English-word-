@@ -1,13 +1,13 @@
 // src/lib/services/sceneGen.js
-// 通过代理（→ https://api.ymhss.cn）调用 OpenAI 格式 chat/completions，生成单词的「可视化场景描述」
+// 通过代理（→ https://infistar.ai）调用 OpenAI 格式 chat/completions，生成单词的「可视化场景描述」
 //
-// 中转站：https://api.ymhss.cn（Claude Code 官方 Max 通道，OpenAI 兼容）
+// 中转站：https://infistar.ai（OpenAI 兼容，由服务端 INFISTAR_BASE_URL 决定）
 // 模型：claude-haiku-4-5-20251001（成本最低）
 //
 // 路径策略：
-//   - dev:  /api/ai/v1/chat/completions         → Vite 代理 → api.ymhss.cn
-//   - prod: /api/ai-relay/v1/chat/completions   → Vercel 函数 → api.ymhss.cn
-//   原因：api.ymhss.cn 不返回 CORS 头，浏览器必须经代理
+//   - dev:  /api/ai/v1/chat/completions         → Vite 代理 → infistar.ai
+//   - prod: /api/ai-relay/v1/chat/completions   → Vercel 函数 → infistar.ai
+//   原因：浏览器不直连中转站（跨域 + Key 只能留在服务端），必须经代理
 //
 // 关键升级：
 // - 当提供 exampleSentence 时，prompt 以例句场景为中心（更精准、具象）
@@ -80,7 +80,7 @@ Rules:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Key 由服务端从 CLAUDE_API_KEY 环境变量注入，前端无需持有
+        // Key 由服务端从 INFISTAR_API_KEY 环境变量注入，前端无需持有
       },
       body: JSON.stringify({
         model: SCENE_MODEL,

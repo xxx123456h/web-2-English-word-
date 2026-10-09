@@ -19,7 +19,7 @@
 | 状态 | React Hooks + 自研轻量 store |
 | 数据库 | Supabase (auth + postgres + storage) |
 | AI 配图 | infistar.ai → `gpt-image-2.5-flare` |
-| AI OCR / 释义 | Claude Sonnet 4.6 (via api.ymhss.cn 中转) |
+| AI OCR / 释义 | Claude Sonnet 4.6 (via infistar.ai 中转) |
 | 部署 | Vercel (Serverless Functions + Cron) |
 
 ## 本地开发
@@ -57,17 +57,17 @@ Vercel Dashboard → Project → Settings → Environment Variables，逐项添�
 |---|---|---|
 | `VITE_SUPABASE_URL` | Supabase 项目 URL（如 `https://xxx.supabase.co`） | ✅ |
 | `VITE_SUPABASE_ANON_KEY` | Supabase 匿名 key（前端可见，安全） | ✅ |
-| `CLAUDE_API_KEY` | api.ymhss.cn 中转站 key，**服务端专用**（不带 `VITE_` 前缀，不会暴露给浏览器）。用于拍照 OCR / Claude 释义 / 场景生成。 | ✅ |
-| `VITE_CLAUDE_API_KEY` | 兼容变量名，已迁移到 `CLAUDE_API_KEY`，不再需要 | ❌ 废弃 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase 服务端 key（**只在服务端**，用于 daily-push cron） | ✅ |
-| `INFISTAR_API_KEY` | infistar.ai key，用于 AI 单词配图 | ⚠️ 强烈建议 |
+| `INFISTAR_API_KEY` | infistar.ai 中转站 key，**服务端专用**（不带 `VITE_` 前缀）。拍照 OCR / 释义 / 场景生成 / AI 配图共用 | ✅ |
 | `INFISTAR_BASE_URL` | infistar.ai 端点，默认 `https://infistar.ai/v1` | ❌ 可选 |
 | `INFISTAR_IMAGE_MODEL` | 模型名，默认 `gpt-image-2.5-flare` | ❌ 可选 |
 | `AI_IMAGE_PROVIDER` | 固定 `infistar` | ❌ 可选 |
 
-> ⚠️ 所有 `VITE_*` 变量会**被打包进前端 JS**。Claude 中转站 Key 现在已迁移到不带前缀的 `CLAUDE_API_KEY`，**只在服务端可访问**，浏览器访问者按 F12 看不到，安全性大幅提升。
+> ⚠️ 所有 `VITE_*` 变量会**被打包进前端 JS**。中转站 Key 使用不带前缀的 `INFISTAR_API_KEY`，**只在服务端可访问**，浏览器访问者按 F12 看不到。
 >
-> ⚠️ `INFISTAR_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` / `CLAUDE_API_KEY` **绝对不要**加 `VITE_` 前缀，否则会被打包到前端泄露。
+> ⚠️ `INFISTAR_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` **绝对不要**加 `VITE_` 前缀，否则会被打包到前端泄露。
+>
+> 旧变量 `CLAUDE_API_KEY` / `VITE_CLAUDE_API_KEY`（原 api.ymhss.cn 中转）已停用，可删除。
 
 ### 4. 点击 Deploy
 
@@ -84,7 +84,7 @@ Vercel Dashboard → Project → Settings → Environment Variables，逐项添�
 ```
 ├── api/                  Vercel Serverless Functions
 │   ├── ai-image.js       AI 单词配图（Claude planner + gpt-image-2 并行）
-│   ├── ai-relay.js       Claude 中转（CORS 代理）
+│   ├── ai-relay.js       AI 中转代理（→ infistar.ai）
 │   ├── ai-memory.js      AI 记忆助手
 │   ├── daily-push.js     每日推送 (Cron)
 │   └── _lib/             服务端公共逻辑
@@ -117,7 +117,7 @@ Vercel Dashboard → Project → Settings → Environment Variables，逐项添�
 
 ### 拍照识别显示 "中转站返回空响应" 或 "中转站鉴权失败"？
 
-1. 检查 Vercel Dashboard → Environment Variables 里的 `CLAUDE_API_KEY`（不带 `VITE_` 前缀）是否完整
+1. 检查 Vercel Dashboard → Environment Variables 里的 `INFISTAR_API_KEY`（不带 `VITE_` 前缀）是否完整
 2. Vercel 函数日志里看 `api/ai-relay.js` 上游响应状态码，以及 `[ai-relay] hit` 诊断行
-3. 本地 dev 下检查 `.env.local` 里 `CLAUDE_API_KEY` 或 `VITE_CLAUDE_API_KEY` 是否存在
+3. 本地 dev 下检查 `.env.local` 里 `INFISTAR_API_KEY` 是否存在
 4. 中转站额度是否用尽

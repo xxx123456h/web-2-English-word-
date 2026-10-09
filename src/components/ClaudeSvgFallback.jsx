@@ -6,7 +6,7 @@
 //     infistar.ai. That's the primary path.
 //   * But infistar.ai is firewalled from mainland China networks (GFW).
 //     When the primary path fails permanently (UNREACHABLE, NO_KEY etc.),
-//     we fall back to asking Claude (api.ymhss.cn - reachable) to design
+//     we fall back to asking Claude (via /api/ai-relay) to design
 //     a small SVG. Claude returns JSON describing colors, an emoji glyph,
 //     and decorative shapes; we render an inline SVG data URL as the
 //     "image" for the flashcard.
@@ -102,7 +102,7 @@ function buildSvgFromDesign(design, word, meaning, size) {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-// ---- Claude call (via /api/ai-relay, which already talks to api.ymhss.cn) ----
+// ---- Claude call (via /api/ai-relay, which forwards to infistar.ai) ----
 // We ask Claude to design the SVG scene; it returns JSON we parse.
 async function askClaudeForDesign(word, meaning) {
   const system = `You are a flashcard illustrator. Output ONLY a JSON object describing a small, flat illustration for an English vocabulary word. The illustration will be rendered as inline SVG.
@@ -121,7 +121,7 @@ Example for "ancient" meaning "古代的":
   const user = `Word: "${word}"\nMeaning: ${meaning || ''}\nReturn JSON.`;
 
   // Use the existing ai-relay route so we don't duplicate the relay logic.
-  // Key 由服务端 ai-relay 从 CLAUDE_API_KEY 环境变量注入，前端不再持有
+  // Key 由服务端 ai-relay 从 INFISTAR_API_KEY 环境变量注入，前端不再持有
   const resp = await fetch('/api/ai-relay/v1/chat/completions', {
     method: 'POST',
     headers: {
