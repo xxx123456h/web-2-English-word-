@@ -33,15 +33,23 @@ export function useAuth() {
   }, [])
 
   useEffect(() => {
+    // 回调必须同步返回：supabase-js 在持有内部 auth 锁时 await 这个回调
+    // （切回标签页 / token 刷新时都会触发）。如果在回调里 await 任何
+    // supabase 调用（ensureProfile 内部的 getUser()、from().select() 都要
+    // 抢同一把锁），就会死锁，之后所有查询都卡住、不发请求。
+    // 所以这里只同步 setUser，其余工作用 setTimeout 推到锁释放之后。
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      (_event, session) => {
         setUser(session?.user ?? null)
         if (session?.user) {
-          // 先尝试 service 拉取（兼容 RLS 不开放的场景）
-          try {
-            await authService.ensureProfile()
-          } catch {}
-          await loadProfile(session.user.id)
+          const uid = session.user.id
+          setTimeout(async () => {
+            // 先尝试 service 拉取（兼容 RLS 不开放的场景）
+            try {
+              await authService.ensureProfile()
+            } catch {}
+            await loadProfile(uid)
+          }, 0)
         } else {
           setProfile(null)
         }

@@ -110,13 +110,13 @@ export function buildImagePrompt(word, meaning, exampleSentence = '') {
 //
 // The Vercel route is now the primary path. It runs the planner and image
 // model in PARALLEL with a 1500ms planner cap, so the bottleneck is the
-// image model's wall time (typically 5-15s for gpt-image-2). We use a
-// 20s client-side timeout as a safety net.
+// image model's wall time (~29s for gpt-image-2.5-flare).
 
-// 30s: user explicitly chose to keep waiting for infistar rather than
-// silently fall back. gpt-image-2 wall time is typically 5-15s; 30s covers
-// the slow tail and avoids Vercel 60s hard cut.
-const GEN_TIMEOUT_MS = 30000;
+// 58s: user explicitly chose to keep waiting for infistar rather than
+// silently fall back. gpt-image-2.5-flare takes ~29s per image; the server
+// gives up at 55s (Vercel maxDuration 60), so 58s lets the server's own
+// error reach us instead of a bare client abort.
+const GEN_TIMEOUT_MS = 58000;
 
 async function callVercelRoute({ word, meaning, prompt, exampleSentence, signal }) {
   const resp = await fetch('/api/ai-image', {
