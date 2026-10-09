@@ -20,6 +20,9 @@ export function relayUrl(subPath) {
   return relayOrigin() + p;
 }
 
+// 兼容：线上早期版本的 api/ai-relay/v1/chat/completions.js 读的是 AI_API_KEY，
+// 这里作为后备，优先使用 INFISTAR_API_KEY。
+// （不读 AI_BASE_URL：它可能仍指向已停用的旧中转站）
 export function relayKey() {
-  return (process.env.INFISTAR_API_KEY || '').trim();
+  return (process.env.INFISTAR_API_KEY || process.env.AI_API_KEY || '').trim();
 }

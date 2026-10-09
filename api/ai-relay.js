@@ -20,6 +20,18 @@
 
 import { relayUrl, relayKey } from './_lib/relayConfig.js';
 
+// 网络层失败（连接重置 / 超时等）自动重试，HTTP 错误码不重试，原样透传
+async function forwardWithRetry(url, options, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      console.warn(`[ai-relay] 第 ${i + 1} 次转发失败：`, err.cause?.code || err.message);
+      if (i === retries) throw err;
+    }
+  }
+}
+
 export default async function handler(req, res) {
   // 早期诊断日志：记录入口请求,便于排查 "Vercel 404 没命中函数 vs 中转站出错"
   // 看到这行 = 路由已命中 ai-relay 函数;看不到 = 请求根本没到这里(Vercel 在路由层 404)
@@ -58,7 +70,7 @@ export default async function handler(req, res) {
   const authHeader = `Bearer ${finalToken}`;
 
   try {
-    const upstream = await fetch(targetUrl, {
+    const upstream = await forwardWithRetry(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -98,8 +110,9 @@ export default async function handler(req, res) {
 
     return res.status(upstream.status).send(text);
   } catch (err) {
-    console.error('[ai-relay] 转发失败:', err);
+    const cause = err.cause?.code || err.cause?.message || '';
+    console.error('[ai-relay] 转发失败:', err, err.cause);
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.status(502).json({ error: '中转站连接失败', details: err.message });
+    res.status(502).json({ error: '中转站连接失败', details: `${err.message} ${cause}`.trim() });
   }
 }
