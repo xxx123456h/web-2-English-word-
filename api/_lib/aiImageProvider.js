@@ -8,6 +8,8 @@
 //     assistant message's content array, similar to Claude's image tool use.
 //   * To add a new provider later: implement generate() and add to PROVIDERS.
 
+import { relayOrigin, relayUrl, relayKey } from './relayConfig.js';
+
 const INFISTAR_TIMEOUT_MS = 30000;
 const INFISTAR_CONNECT_TIMEOUT_MS = 5000;
 
@@ -37,15 +39,12 @@ function err(msg, code = 'PROVIDER_ERROR') {
 //   ]}}]}
 // We unwrap the base64 -> data URL so the frontend <img> renders directly.
 async function infistarGenerate({ prompt, word, meaning, example }) {
-  const apiKey = process.env.INFISTAR_API_KEY;
+  const apiKey = relayKey();
   // INFISTAR_BASE_URL may be the bare host (https://infistar.ai) or include
-  // the path prefix (https://infistar.ai/v1) per the user's setup UI.
-  // We append /chat/completions regardless.
-  const baseRaw = process.env.INFISTAR_BASE_URL || 'https://infistar.ai';
-  const base = baseRaw.replace(/\/$/, '');
-  const url = base.endsWith('/chat/completions')
-    ? base
-    : `${base}/v1/chat/completions`;
+  // the /v1 prefix (https://infistar.ai/v1). relayConfig normalizes both so
+  // we never end up with /v1/v1/chat/completions.
+  const base = relayOrigin();
+  const url = relayUrl('/v1/chat/completions');
   const model = process.env.INFISTAR_IMAGE_MODEL || 'gpt-image-2.5-flare';
 
   if (!apiKey) {

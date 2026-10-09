@@ -12,15 +12,12 @@
 // alive -- the user always sees an emoji archetype in <16ms.
 //
 // Env vars (set in Vercel dashboard -> Settings -> Environment Variables):
-//   INFISTAR_API_KEY       required. The user's infistar.ai key
-//                          (sk-trKHZKtoCyJYbqk2V5S7ZFlE1xbQUbZra12ab8cXh3zjRWgj)
+//   INFISTAR_API_KEY       required. infistar.ai key, shared by image gen
+//                          and the planner (never commit the real value)
 //   INFISTAR_BASE_URL      optional, defaults to https://infistar.ai/v1
-//                          (per the user's infistar dashboard screenshot)
 //   INFISTAR_IMAGE_MODEL   optional, defaults to "gpt-image-2.5-flare"
 //   AI_IMAGE_PROVIDER      optional, defaults to "infistar"
-//   CLAUDE_API_KEY         optional, enables direct Anthropic planner
-//   VITE_CLAUDE_API_KEY    optional, enables planner via api.ymhss.cn
-//   CLAUDE_RELAY_URL       optional, defaults to https://api.ymhss.cn
+//   CLAUDE_API_KEY         optional, backup planner via direct Anthropic API
 //   PLANNER_TIMEOUT_MS     optional, default 1500
 //
 

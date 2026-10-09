@@ -6,12 +6,14 @@
 // the wrong image (e.g. abandon -> "abandon factory" vs "person leaving").
 //
 // Provider strategy (in priority order):
-//   1) CLAUDE_API_KEY env var  -> call Anthropic API directly
-//   2) VITE_CLAUDE_API_KEY env -> call api.ymhss.cn via /v1/chat/completions
-//      (same model family, served by the user's existing relay pattern)
+//   1) INFISTAR_API_KEY env -> call infistar.ai via /v1/chat/completions
+//      (same relay + key as OCR / lookup, see relayConfig.js)
+//   2) CLAUDE_API_KEY env   -> call Anthropic API directly (optional backup)
 //
 // If neither is configured we return null and the caller falls back to
 // the frontend's prompt-only path.
+
+import { relayUrl, relayKey } from './relayConfig.js';
 
 const SYSTEM = `You are a visual scene designer for a vocabulary flashcard app.
 Your job is to translate an English word (with optional Chinese meaning and
@@ -163,17 +165,14 @@ async function callDirectAnthropic({ word, meaning, example, signal }) {
   }
 }
 
-// ---- Provider 2: existing OpenAI-compatible relay ----
-// Reuses the same pattern as the user's ai-relay.js. The VITE_CLAUDE_API_KEY
-// is the user's bearer token for api.ymhss.cn.
+// ---- Provider 2: OpenAI-compatible relay (infistar.ai) ----
+// Same relay + key as api/ai-relay.js (INFISTAR_BASE_URL / INFISTAR_API_KEY).
 async function callViaRelay({ word, meaning, example, signal }) {
-  const bearer = process.env.VITE_CLAUDE_API_KEY;
+  const bearer = relayKey();
   if (!bearer) return null;
 
-  const base = process.env.CLAUDE_RELAY_URL || 'https://api.ymhss.cn';
-
   try {
-    const resp = await fetch(`${base.replace(/\/$/, '')}/v1/chat/completions`, {
+    const resp = await fetch(relayUrl('/v1/chat/completions'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -207,11 +206,11 @@ export async function planWordVisual({ word, meaning, example }, opts = {}) {
   if (!word) return null;
   const signal = opts.signal;
 
-  // Try direct Anthropic first (cheaper, faster).
-  let plan = await callDirectAnthropic({ word, meaning, example, signal });
+  // Try the infistar.ai relay first (primary key for all AI calls).
+  let plan = await callViaRelay({ word, meaning, example, signal });
   if (plan) return plan;
 
-  // Fall back to the user's existing relay.
-  plan = await callViaRelay({ word, meaning, example, signal });
+  // Optional backup: direct Anthropic API if CLAUDE_API_KEY is configured.
+  plan = await callDirectAnthropic({ word, meaning, example, signal });
   return plan;
 }

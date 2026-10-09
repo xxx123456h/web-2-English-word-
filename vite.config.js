@@ -25,8 +25,12 @@ function loadEnvToProcess() {
 }
 loadEnvToProcess()
 
-// AI 调用通过 Vite 代理转发到 https://api.ymhss.cn
-// 原因：api.ymhss.cn 不返回 CORS 头，浏览器直接跨域请求会被拦截
+// 中转站根地址（去掉末尾 /v1，代理 rewrite 后的路径本身已带 /v1/...）
+const RELAY_ORIGIN = (process.env.INFISTAR_BASE_URL || 'https://infistar.ai/v1')
+  .trim().replace(/\/+$/, '').replace(/\/v1$/, '')
+
+// AI 调用通过 Vite 代理转发到 infistar.ai（INFISTAR_BASE_URL）
+// 原因：浏览器不直连中转站（跨域 + 避免 Key 暴露），Key 在代理层注入
 // 代理只在 dev server 生效；生产环境需部署 Vercel/Netlify 函数转发
 //
 // 注意：代理只匹配旧的真路由路径（/api/ai-relay, /api/ai-memory）。
@@ -87,15 +91,15 @@ export default defineConfig({
   plugins: [react(), apiDevPlugin()],
   server: {
     proxy: {
-      // 旧 Claude 中转站转发 — dev 下注入本地 .env.local 里的 Key，prod 由 Vercel 函数处理
+      // 中转站转发 — dev 下注入本地 .env.local 里的 Key，prod 由 Vercel 函数处理
       '/api/ai-relay': {
-        target: 'https://api.ymhss.cn',
+        target: RELAY_ORIGIN,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ai-relay/, ''),
         secure: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => {
-            const token = (process.env.CLAUDE_API_KEY || process.env.VITE_CLAUDE_API_KEY || '').trim()
+            const token = (process.env.INFISTAR_API_KEY || '').trim()
             if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`)
           })
         },
@@ -103,26 +107,26 @@ export default defineConfig({
       // 兼容老路径 /api/ai (camera.js 等老代码用过的别名)
       // dev 下走代理到中转站,生产环境走 Vercel Serverless (api/ai.js)
       '/api/ai': {
-        target: 'https://api.ymhss.cn',
+        target: RELAY_ORIGIN,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ai/, ''),
         secure: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => {
-            const token = (process.env.CLAUDE_API_KEY || process.env.VITE_CLAUDE_API_KEY || '').trim()
+            const token = (process.env.INFISTAR_API_KEY || '').trim()
             if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`)
           })
         },
       },
       // 旧的 AI memory 路由（如果存在）
       '/api/ai-memory': {
-        target: 'https://api.ymhss.cn',
+        target: RELAY_ORIGIN,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ai-memory/, ''),
         secure: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => {
-            const token = (process.env.CLAUDE_API_KEY || process.env.VITE_CLAUDE_API_KEY || '').trim()
+            const token = (process.env.INFISTAR_API_KEY || '').trim()
             if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`)
           })
         },
