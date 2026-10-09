@@ -15,7 +15,7 @@
 //   INFISTAR_API_KEY       required. infistar.ai key, shared by image gen
 //                          and the planner (never commit the real value)
 //   INFISTAR_BASE_URL      optional, defaults to https://infistar.ai/v1
-//   INFISTAR_IMAGE_MODEL   optional, defaults to "gpt-image-2.5-flare"
+//   INFISTAR_IMAGE_MODEL   optional, defaults to "gemini-3.1-flash-lite-image"
 //   AI_IMAGE_PROVIDER      optional, defaults to "infistar"
 //   CLAUDE_API_KEY         optional, backup planner via direct Anthropic API
 //   PLANNER_TIMEOUT_MS     optional, default 1500

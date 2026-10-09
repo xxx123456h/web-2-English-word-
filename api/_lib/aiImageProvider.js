@@ -2,19 +2,25 @@
 // AI image generation provider abstraction.
 //
 // Why this file exists:
-//   * We wire up infistar.ai -> gpt-image-2.5-flare. Its /v1/models entry
-//     lists supported_endpoint_types: ["image-generation"], i.e. the
-//     OpenAI-style POST /v1/images/generations. Calling /v1/chat/completions
-//     returns 422 "当前模型不支持本次 API 端点".
+//   * We wire up infistar.ai -> gemini-3.1-flash-lite-image (default).
+//     Measured ~6-9s per image, ~80-600KB JPEG. gpt-image-2.5-flare took ~29s.
+//   * Endpoint depends on the model's /v1/models supported_endpoint_types:
+//       gemini-*-image  -> ["openai"]           -> POST /v1/chat/completions
+//       gpt-image-*     -> ["image-generation"] -> POST /v1/images/generations
+//     Calling the wrong one returns 422 "当前模型不支持本次 API 端点".
 //   * To add a new provider later: implement generate() and add to PROVIDERS.
 
 import { relayOrigin, relayUrl, relayKey } from './relayConfig.js';
 
-// Measured: ~29s for a 1024x1024 image, and response headers only arrive
-// once the image is done, so there is no separate "connect" timeout (a 5s
-// one used to abort every request). DNS/TCP failures still surface
-// immediately as fetch errors. 55s stays under the route's maxDuration 60.
-const INFISTAR_TIMEOUT_MS = 55000;
+// Response headers only arrive once the image is done, so there is no
+// separate "connect" timeout (a 5s one used to abort every request).
+// DNS/TCP failures still surface immediately as fetch errors. 25s is ~3x
+// the measured gemini latency; set INFISTAR_IMAGE_TIMEOUT_MS higher (max
+// ~55000, route maxDuration is 60s) if you switch back to gpt-image-*.
+const INFISTAR_TIMEOUT_MS = parseInt(process.env.INFISTAR_IMAGE_TIMEOUT_MS || '25000', 10);
+
+// gemini image models only speak the chat endpoint.
+const usesChatEndpoint = (model) => /^gemini-/i.test(model);
 
 function err(msg, code = 'PROVIDER_ERROR') {
   const e = new Error(msg);
@@ -24,24 +30,30 @@ function err(msg, code = 'PROVIDER_ERROR') {
   return e;
 }
 
-// ---- Provider 1: infistar.ai (gpt-image-2.5-flare) ----
+// ---- Provider 1: infistar.ai ----
 //
-// Endpoint (OpenAI images API):
+// Chat endpoint (gemini-*-image):
+//   POST {base}/v1/chat/completions
+//   Body: { model, messages: [{ role: "user", content: "Generate an image: ..." }] }
+//   Response: choices[0].message.content = "![image](data:image/jpeg;base64,...)"
+//
+// Images endpoint (gpt-image-*):
 //   POST {base}/v1/images/generations
-//   Authorization: Bearer $INFISTAR_API_KEY
 //   Body: { model, prompt, n: 1, size: "1024x1024" }
-//
-// Response: { created, data: [{ b64_json: "iVBORw0K..." }], usage }
-//   (b64_json is a PNG, ~2.2MB base64; output_format=jpeg is ignored.)
-// Some relays return data[0].url instead; we accept either.
+//   Response: { data: [{ b64_json: "iVBORw0K..." }] } (PNG, ~2.2MB base64).
+//   Some relays return data[0].url instead; we accept either.
 async function infistarGenerate({ prompt, word, meaning, example }) {
   const apiKey = relayKey();
   // INFISTAR_BASE_URL may be the bare host (https://infistar.ai) or include
   // the /v1 prefix (https://infistar.ai/v1). relayConfig normalizes both so
   // we never end up with /v1/v1/images/generations.
   const base = relayOrigin();
-  const url = relayUrl('/v1/images/generations');
-  const model = process.env.INFISTAR_IMAGE_MODEL || 'gpt-image-2.5-flare';
+  const model = process.env.INFISTAR_IMAGE_MODEL || 'gemini-3.1-flash-lite-image';
+  const chat = usesChatEndpoint(model);
+  const url = relayUrl(chat ? '/v1/chat/completions' : '/v1/images/generations');
+  const reqBody = chat
+    ? { model, messages: [{ role: 'user', content: `Generate an image: ${prompt}` }] }
+    : { model, prompt, n: 1, size: '1024x1024' };
 
   if (!apiKey) {
     throw err('INFISTAR_API_KEY is not configured', 'NO_KEY');
@@ -58,19 +70,21 @@ async function infistarGenerate({ prompt, word, meaning, example }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ model, prompt, n: 1, size: '1024x1024' }),
+        body: JSON.stringify(reqBody),
         signal: ctrl.signal,
       });
     } catch (networkErr) {
       // Classify the failure so the UI can give actionable advice.
       //
-      //   * AbortError (overall-timeout)          -> 55s timer fired. Slow
+      //   * AbortError (overall-timeout)          -> overall timer fired. Slow
       //     API or stalled connection. TIMEOUT (worth retrying).
       //   * ENOTFOUND / EAI_AGAIN / ECONNREFUSED  -> DNS or TCP refusal.
       //     Host is firewalled or doesn't exist. UNREACHABLE.
       //   * Other                                 -> generic NETWORK.
       const code = networkErr?.code || networkErr?.cause?.code;
-      const isAbort = networkErr?.name === 'AbortError';
+      // abort(reason) rejects with the reason string itself, not an AbortError,
+      // so check the signal rather than the error's name.
+      const isAbort = ctrl.signal.aborted || networkErr?.name === 'AbortError';
 
       if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || code === 'ECONNREFUSED'
           || code === 'ETIMEDOUT' || code === 'ENETUNREACH') {
@@ -95,6 +109,21 @@ async function infistarGenerate({ prompt, word, meaning, example }) {
       data = await resp.json();
     } catch (_) {
       throw err('infistar.ai returned non-JSON response', 'BAD_JSON');
+    }
+
+    if (chat) {
+      // The image comes back inline in the message text, as markdown or a
+      // bare data URL. Grab the first data:image/... or http(s) image URL.
+      const content = data?.choices?.[0]?.message?.content;
+      const text = typeof content === 'string' ? content
+        : Array.isArray(content) ? content.map((c) => c?.text || c?.image_url?.url || '').join(' ') : '';
+      const m = text.match(/data:image\/[a-z+]+;base64,[A-Za-z0-9+/=]+/)
+        || text.match(/https?:\/\/[^\s)"']+/);
+      if (m) return { imageUrl: m[0], source: 'infistar', revisedPrompt: null };
+      throw err(
+        `infistar.ai chat reply had no image: ${JSON.stringify(data).slice(0, 300)}`,
+        'BAD_SHAPE',
+      );
     }
 
     const item = data?.data?.[0];
